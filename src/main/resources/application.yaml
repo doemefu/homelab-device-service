@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: device-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/homelabdb
+    username: ${DB_USERNAME:homelab}
+    password: ${DB_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    table: flyway_schema_history_device
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${JWKS_URI:http://localhost:8080/auth/jwks}
+
+server:
+  port: 8081
+
+app:
+  mqtt:
+    broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
+    client-id: ${MQTT_CLIENT_ID:device-service}
+    username: ${MQTT_USERNAME:backend}
+    password: ${MQTT_PASSWORD}
+    topics: terra1/#,terra2/#,terraGeneral/#
+    qos: 1
+    will-topic: javaBackend/mqtt/status
+    will-payload: '{"MqttState": 0}'
+
+  influxdb:
+    url: ${INFLUX_URL:http://localhost:8086}
+    token: ${INFLUX_TOKEN}
+    org: ${INFLUX_ORG:homelab}
+    bucket: ${INFLUX_BUCKET:iot-bucket}
+
+  websocket:
+    allowed-origins: "*"
+
+  scheduler:
+    poll-interval: 60000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
