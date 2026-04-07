@@ -35,7 +35,7 @@ public abstract class AbstractIntegrationTest {
 
     @Container
     protected static final PostgreSQLContainer<?> postgres =
-            new PostgreSQLContainer<>("postgres:17")
+            new PostgreSQLContainer<>("postgres:16")
                     .withDatabaseName("homelabdb")
                     .withUsername("homelab")
                     .withPassword("homelab")
