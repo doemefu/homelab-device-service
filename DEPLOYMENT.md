@@ -2,6 +2,69 @@
 
 ---
 
+## device-service Deployment
+
+### Manifest
+
+```bash
+kubectl apply -f k8s/deployment.yml
+```
+
+Deploys a `Deployment` (1 replica) and a `Service` in namespace `apps`. Port: 8081.
+
+### Required Kubernetes Secret
+
+Create `device-service-secrets` before the first deployment:
+
+```bash
+kubectl create secret generic device-service-secrets \
+  --namespace apps \
+  --from-literal=db-username=<postgres-user> \
+  --from-literal=db-password=<postgres-password> \
+  --from-literal=mqtt-password=<mosquitto-backend-password> \
+  --from-literal=influx-token=<influxdb-admin-token>
+```
+
+> In production, create this secret via the SOPS-backed Ansible playbook rather than `kubectl create` — see the cluster-level DEPLOYMENT.md for the secrets pattern.
+
+### Image tag
+
+The manifest pins the image to a specific tag. After each CI build, update the tag in `k8s/deployment.yml` to the new Git SHA before applying:
+
+```bash
+# Set IMAGE_TAG to the SHA from the GitHub Actions build output
+kubectl set image deployment/device-service \
+  device-service=ghcr.io/doemefu/homelab-device-service:${IMAGE_TAG} \
+  -n apps
+```
+
+### Post-deploy verification
+
+```bash
+# Wait for rollout
+kubectl rollout status deployment/device-service -n apps
+
+# Check Flyway ran and MQTT connected
+kubectl logs -n apps deployment/device-service | grep -iE "flyway|mqtt connected|subscribed"
+
+# Check REST API is up
+kubectl port-forward -n apps svc/device-service 8081:8081
+curl -s http://localhost:8081/actuator/health
+```
+
+### External exposure (WebSocket / REST API)
+
+The frontend connects to the WebSocket endpoint (`/ws`) and REST API. Add a Cloudflare Tunnel entry:
+
+```yaml
+- hostname: device.furchert.ch   # or your chosen hostname
+  service: http://device-service.apps.svc.cluster.local:8081
+```
+
+WebSocket connections are proxied transparently by Cloudflare Tunnel. No additional configuration is needed.
+
+---
+
 ## Namespace Conventions
 
 | Namespace        | Purpose                                                      | Notes                                      |

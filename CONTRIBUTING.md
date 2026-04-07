@@ -90,9 +90,17 @@ The Flyway history table is named `flyway_schema_history_device` to avoid confli
 
 ## CI/CD
 
-Not yet configured. Will follow the same pattern as [homelab-auth-service](https://github.com/doemefu/homelab-auth-service):
-- Every push and PR to `main` runs `./mvnw verify`
-- On push to `main`: multi-arch Docker image (`linux/amd64` + `linux/arm64`) pushed to GHCR
+GitHub Actions workflow: `.github/workflows/build.yml`
+
+**On every push and PR to `main`:**
+- `test` job: runs `./mvnw verify` (unit tests + Testcontainers integration tests; Docker must be available on the runner)
+
+**On push to `main` only (after tests pass):**
+- `build-and-push` job: builds a multi-arch Docker image (`linux/amd64` + `linux/arm64`) via `docker/build-push-action` and pushes to GHCR (`ghcr.io/doemefu/homelab-device-service`)
+- Image is tagged with the Git SHA (short) and `latest`
+- Build cache is stored in GitHub Actions Cache for faster rebuilds
+
+After a successful CI run, update `k8s/deployment.yml` with the new image tag before deploying to the cluster.
 
 ---
 

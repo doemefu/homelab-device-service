@@ -103,12 +103,20 @@ Current migrations:
 
 ## Configuration Reference
 
+All secrets are sourced from the `device-service-secrets` Kubernetes Secret (see `k8s/deployment.yml`).
+
 | Env Var | K8s Source | Description |
 |---------|-----------|-------------|
-| `DB_USERNAME` | Secret `homelab-db-credentials` / key `username` | PostgreSQL username |
-| `DB_PASSWORD` | Secret `homelab-db-credentials` / key `password` | PostgreSQL password |
-| `MQTT_PASSWORD` | Secret (TBD) | Mosquitto backend user password |
-| `INFLUX_TOKEN` | Secret (TBD) | InfluxDB admin token |
+| `DB_USERNAME` | Secret `device-service-secrets` / key `db-username` | PostgreSQL username |
+| `DB_PASSWORD` | Secret `device-service-secrets` / key `db-password` | PostgreSQL password |
+| `MQTT_PASSWORD` | Secret `device-service-secrets` / key `mqtt-password` | Mosquitto backend user password |
+| `INFLUX_TOKEN` | Secret `device-service-secrets` / key `influx-token` | InfluxDB admin token |
+| `MQTT_BROKER_URL` | Env / ConfigMap | Mosquitto broker URL (default: `tcp://mosquitto.apps.svc.cluster.local:1883`) |
+| `MQTT_USERNAME` | Env / ConfigMap | Mosquitto username (default: `backend`) |
+| `INFLUX_URL` | Env / ConfigMap | InfluxDB HTTP endpoint (default: `http://influxdb.apps.svc.cluster.local:8086`) |
+| `INFLUX_ORG` | Env / ConfigMap | InfluxDB organisation (default: `homelab`) |
+| `INFLUX_BUCKET` | Env / ConfigMap | InfluxDB bucket for sensor data (default: `iot-bucket`) |
+| `JWKS_URI` | Env / ConfigMap | Auth-service JWKS endpoint (default: `http://auth-service.apps.svc.cluster.local:8080/auth/jwks`) |
 
 ---
 
@@ -136,3 +144,47 @@ Common causes: database unreachable, migration checksum mismatch.
    kubectl port-forward -n apps svc/device-service 8081:8081
    # Connect a STOMP client to ws://localhost:8081/ws
    ```
+
+### Scheduled commands not executing
+
+1. Check logs for SchedulerService errors:
+   ```bash
+   kubectl logs -n apps deployment/device-service | grep -i scheduler
+   ```
+2. Verify the `schedules` table is accessible — data-service must have run its Flyway migration:
+   ```bash
+   kubectl logs -n apps deployment/data-service | grep -i flyway
+   ```
+3. Restart to force a schedule reload:
+   ```bash
+   kubectl rollout restart deployment/device-service -n apps
+   ```
+
+### REST API returns 401 Unauthorized
+
+1. Verify auth-service is running and its JWKS endpoint is reachable:
+   ```bash
+   kubectl get pods -n apps -l app=auth-service
+   kubectl logs -n apps deployment/device-service | grep -iE "jwt|jwks|oauth"
+   ```
+2. Confirm `JWKS_URI` is set correctly in the device-service deployment:
+   ```bash
+   kubectl describe deployment device-service -n apps | grep JWKS_URI
+   ```
+
+---
+
+## InfluxDB Measurements
+
+The service writes to the `iot-bucket` bucket (configurable via `INFLUX_BUCKET`) on every MQTT sensor message.
+
+| Property | Value |
+|----------|-------|
+| Measurement | `terrarium` |
+| Tag: `device` | Device name, e.g. `terra1`, `terra2` |
+| Field: `temperature` | Air temperature in °C (Double) |
+| Field: `humidity` | Relative humidity in % (Double) |
+| Precision | Milliseconds |
+| Trigger | Every `terra{n}/SHT35/data` MQTT message |
+
+Only `SENSOR_DATA` messages write to InfluxDB. State-change messages (light, rain, etc.) update PostgreSQL only.
