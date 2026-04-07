@@ -1,4 +1,4 @@
-# APPS.md — App Deployment Guide
+# DEPLOYMENT.md — App Deployment Guide
 
 ---
 

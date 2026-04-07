@@ -12,6 +12,8 @@ import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.springframework.beans.factory.annotation.Autowired;
+
+import java.nio.charset.StandardCharsets;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
@@ -81,7 +83,7 @@ public class MqttClientService implements MqttCallbackExtended {
                     : OFFLINE_PAYLOAD;
             opts.setWill(
                     props.getWillTopic(),
-                    willPayload.getBytes(),
+                    willPayload.getBytes(StandardCharsets.UTF_8),
                     props.getQos(),
                     true
             );
@@ -139,7 +141,7 @@ public class MqttClientService implements MqttCallbackExtended {
     /** Delegates an incoming message to {@link MqttMessageHandler}. */
     @Override
     public void messageArrived(String topic, MqttMessage message) {
-        String payload = new String(message.getPayload());
+        String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
         log.debug("MQTT message received on topic '{}': {}", topic, payload);
         try {
             messageHandler.handle(topic, payload);
@@ -178,7 +180,7 @@ public class MqttClientService implements MqttCallbackExtended {
             return;
         }
         try {
-            MqttMessage message = new MqttMessage(payload.getBytes());
+            MqttMessage message = new MqttMessage(payload.getBytes(StandardCharsets.UTF_8));
             message.setQos(qos);
             message.setRetained(retained);
             client.publish(topic, message);

@@ -67,7 +67,7 @@ The service connects to database `homelabdb` on `localhost:5432`, Mosquitto on `
 - **Jackson 3** uses group ID `tools.jackson` (not `com.fasterxml.jackson`) — affects MQTT JSON message parsing
 - **`@WebMvcTest`** support moved to the `spring-boot-webmvc-test` artifact
 - **`@AutoConfigureMockMvc`** must be added explicitly for MockMvc in `@SpringBootTest`
-- **Timestamps** — all entity timestamps use `java.time.Instant` (mapped to PostgreSQL `TIMESTAMPTZ`)
+- **Timestamps** — the `Device` entity uses `java.time.LocalDateTime` (mapped to PostgreSQL `TIMESTAMP`)
 
 ---
 

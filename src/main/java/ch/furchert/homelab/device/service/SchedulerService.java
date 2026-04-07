@@ -125,7 +125,7 @@ public class SchedulerService {
             }
         }
 
-        log.info("Schedules reloaded: {} active tasks", activeTasks.size());
+        log.debug("Schedules reloaded: {} active tasks", activeTasks.size());
     }
 
     /**
