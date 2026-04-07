@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: device-service
+  namespace: apps
+  labels:
+    app: device-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: device-service
+  template:
+    metadata:
+      labels:
+        app: device-service
+    spec:
+      containers:
+        - name: device-service
+          image: ghcr.io/doemefu/homelab-device-service:latest
+          ports:
+            - containerPort: 8081
+          env:
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: device-service-secrets
+                  key: db-username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: device-service-secrets
+                  key: db-password
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: device-service-secrets
+                  key: mqtt-password
+            - name: INFLUX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: device-service-secrets
+                  key: influx-token
+            - name: MQTT_BROKER_URL
+              value: "tcp://mosquitto.apps.svc.cluster.local:1883"
+            - name: INFLUX_URL
+              value: "http://influxdb.apps.svc.cluster.local:8086"
+            - name: JWKS_URI
+              value: "http://auth-service.apps.svc.cluster.local:8080/auth/jwks"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: device-service
+  namespace: apps
+spec:
+  selector:
+    app: device-service
+  ports:
+    - port: 8081
+      targetPort: 8081

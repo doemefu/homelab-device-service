@@ -1,9 +1,7 @@
 package ch.furchert.homelab.device;
 
-import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -24,18 +22,12 @@ import java.time.Duration;
  * running container ports into the Spring application context before the
  * context is created.
  *
- * <p>The entire test class (and all subclasses) is skipped when Docker is not
- * available on the host, so the CI pipeline does not fail in environments
- * without a Docker daemon.
+ * <p>{@code disabledWithoutDocker = true} causes the entire test class (and all
+ * subclasses) to be skipped when Docker is not available on the host, so the
+ * CI pipeline does not fail in environments without a Docker daemon.
  */
-@Testcontainers
-@EnabledIf("ch.furchert.homelab.device.AbstractIntegrationTest#isDockerAvailable")
+@Testcontainers(disabledWithoutDocker = true)
 public abstract class AbstractIntegrationTest {
-
-    /** Called by the {@code @EnabledIf} expression to detect Docker availability. */
-    static boolean isDockerAvailable() {
-        return DockerClientFactory.instance().isDockerAvailable();
-    }
 
     // ------------------------------------------------------------------
     // PostgreSQL
