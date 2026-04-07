@@ -111,7 +111,7 @@ class DeviceControllerTest {
         // Verify MQTT publish was called with the correct topic
         verify(mqttClientService).publish(
                 eq("terra1/light/man"),
-                eq("{\"LightState\": 1}"),
+                eq("{\"LightState\":1}"),
                 eq(1),
                 eq(false)
         );

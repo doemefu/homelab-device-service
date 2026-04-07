@@ -22,16 +22,16 @@ This is the IoT-facing backend. It handles everything between the MQTT broker an
 
 One of 3 microservices in the homelab IoT ecosystem:
 - **auth-service** — JWT issuance, JWKS endpoint
-- **device-service** (this) — MQTT, device state, InfluxDB, schedules, WebSocket
-- **data-service** — InfluxDB queries for historical data (no schedule involvement)
+- **device-service** (this) — MQTT, device state, InfluxDB, schedule execution, WebSocket
+- **data-service** — InfluxDB queries for historical data, schedule CRUD (owns `schedules` table)
 
 Device-service validates JWTs via auth-service's JWKS endpoint (cached, fetched once at startup).
 
 ## Database
 
-**PostgreSQL** — two tables, both owned by this service:
+**PostgreSQL** — `devices` table owned by this service; `schedules` table owned by data-service (read-only access here):
 
-### `devices` table (Flyway V1)
+### `devices` table (Flyway V1 — owned by device-service)
 ```sql
 CREATE TABLE devices (
     id              BIGSERIAL PRIMARY KEY,
@@ -48,19 +48,9 @@ CREATE TABLE devices (
 INSERT INTO devices (name) VALUES ('terra1'), ('terra2');
 ```
 
-### `schedules` table (Flyway V2)
-```sql
-CREATE TABLE schedules (
-    id              BIGSERIAL PRIMARY KEY,
-    title           VARCHAR(100) NOT NULL,
-    cron_expression VARCHAR(50) NOT NULL,
-    mqtt_topic      VARCHAR(200) NOT NULL,
-    mqtt_payload    VARCHAR(500) NOT NULL,
-    active          BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
-);
-```
+### `schedules` table (owned by data-service — read-only access)
+
+> **Note:** This table is created and migrated by `homelab-data-service`. Device-service only reads active schedules to execute cron-triggered MQTT publishes. No Flyway migration for this table exists in this service.
 
 **Flyway config:** `spring.flyway.table=flyway_schema_history_device` (separate from other services sharing the same PostgreSQL instance).
 
@@ -78,12 +68,7 @@ CREATE TABLE schedules (
 
 ### Schedule endpoints
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/schedules` | JWT | List all schedules |
-| POST | `/schedules` | ADMIN | Create schedule |
-| PUT | `/schedules/{id}` | ADMIN | Update schedule |
-| DELETE | `/schedules/{id}` | ADMIN | Delete schedule |
+> **Note:** Schedule CRUD endpoints are provided by `homelab-data-service`, which owns the `schedules` table. Device-service only reads active schedules internally for cron-triggered MQTT publishing — no REST endpoints for schedules are exposed here.
 
 ### WebSocket
 
@@ -187,11 +172,7 @@ ch.furchert.homelab.device/
 
 ## Architecture Spec Update
 
-`docs/052-architecture-target.md` changes:
-- Move `schedules` table from data-service to device-service ownership
-- Move schedule CRUD endpoints from data-service to device-service
-- Update inter-service communication diagram (no shared `schedules` table read)
-- Update data-service description to remove schedule references
+> **Decision:** The `schedules` table remains owned by data-service. Device-service reads active schedules (read-only) to execute cron-triggered MQTT publishes. No schedule CRUD endpoints exist in this service.
 
 ## What User Needs To Provide
 

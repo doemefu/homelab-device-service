@@ -24,7 +24,7 @@ public class InfluxDbConfig {
      * @param props bound InfluxDB properties; must not be null
      * @return a fully initialised {@link InfluxDBClient}
      */
-    @Bean
+    @Bean(destroyMethod = "close")
     public InfluxDBClient influxDBClient(InfluxDbProperties props) {
         return InfluxDBClientFactory.create(
                 props.getUrl(),

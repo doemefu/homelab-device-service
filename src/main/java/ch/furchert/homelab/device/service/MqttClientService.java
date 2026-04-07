@@ -68,13 +68,20 @@ public class MqttClientService implements MqttCallbackExtended {
             opts.setCleanSession(true);
             opts.setKeepAliveInterval(30);
             opts.setConnectionTimeout(10);
-            opts.setUserName(props.getUsername());
-            opts.setPassword(props.getPassword().toCharArray());
+            if (props.getUsername() != null && !props.getUsername().isBlank()) {
+                opts.setUserName(props.getUsername());
+            }
+            if (props.getPassword() != null && !props.getPassword().isBlank()) {
+                opts.setPassword(props.getPassword().toCharArray());
+            }
 
             // Last-Will: published by the broker if the connection drops unexpectedly
+            String willPayload = props.getWillPayload() != null
+                    ? props.getWillPayload()
+                    : OFFLINE_PAYLOAD;
             opts.setWill(
                     props.getWillTopic(),
-                    OFFLINE_PAYLOAD.getBytes(),
+                    willPayload.getBytes(),
                     props.getQos(),
                     true
             );

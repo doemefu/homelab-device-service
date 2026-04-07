@@ -73,7 +73,10 @@ public class SchedulerService {
         // Cancel tasks that are no longer in the active set
         activeTasks.keySet().removeIf(id -> {
             if (!currentMap.containsKey(id)) {
-                activeTasks.get(id).cancel(false);
+                ScheduledFuture<?> future = activeTasks.get(id);
+                if (future != null) {
+                    future.cancel(false);
+                }
                 log.debug("Cancelled scheduler task for schedule id={}", id);
                 return true;
             }
@@ -95,9 +98,13 @@ public class SchedulerService {
             try {
                 CronTrigger trigger = new CronTrigger(schedule.getCronExpression());
                 ScheduledFuture<?> future = taskScheduler.schedule(task, trigger);
-                activeTasks.put(schedule.getId(), future);
-                log.debug("Registered scheduler task for schedule id={} cron='{}' topic='{}'",
-                        schedule.getId(), schedule.getCronExpression(), topic);
+                if (future != null) {
+                    activeTasks.put(schedule.getId(), future);
+                    log.debug("Registered scheduler task for schedule id={} cron='{}' topic='{}'",
+                            schedule.getId(), schedule.getCronExpression(), topic);
+                } else {
+                    log.warn("Scheduler rejected task for schedule id={}", schedule.getId());
+                }
             } catch (IllegalArgumentException e) {
                 log.error("Invalid cron expression '{}' for schedule id={}: {}",
                         schedule.getCronExpression(), schedule.getId(), e.getMessage());

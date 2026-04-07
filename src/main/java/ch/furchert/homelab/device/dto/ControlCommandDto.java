@@ -2,6 +2,7 @@ package ch.furchert.homelab.device.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 
 /**
  * Request body for POST /devices/{id}/control.
@@ -10,6 +11,6 @@ import jakarta.validation.constraints.NotNull;
  * @param state the desired state: 0 (off) or 1 (on)
  */
 public record ControlCommandDto(
-        @NotBlank String field,
+        @NotBlank @Pattern(regexp = "^(light|nightLight|rain)$", message = "field must be one of: light, nightLight, rain") String field,
         @NotNull Integer state
 ) {}

@@ -1,6 +1,6 @@
 package ch.furchert.homelab.device.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -139,6 +139,34 @@ class MqttMessageParserTest {
     @Test
     void parse_terraTopicWithUnmatchedPath_returnsUnknown() {
         ParsedMqttMessage result = parser.parse("terra1/unknownField", "{\"value\":1}");
+
+        assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
+    }
+
+    @Test
+    void parse_terraGeneralTopic_returnsUnknown() {
+        ParsedMqttMessage result = parser.parse("terraGeneral/light/schedule", "{\"LightState\":1}");
+
+        assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
+    }
+
+    @Test
+    void parse_manCommandTopic_returnsUnknown() {
+        ParsedMqttMessage result = parser.parse("terra1/light/man", "{\"LightState\":1}");
+
+        assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
+    }
+
+    // -------------------------------------------------------------------------
+    // Malformed / null / empty payload
+    // -------------------------------------------------------------------------
+
+    @Test
+    void parse_sensorData_missingFields_returnsUnknown() {
+        ParsedMqttMessage result = parser.parse(
+                "terra1/SHT35/data",
+                "{\"Temperature\":22.5}"
+        );
 
         assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
     }

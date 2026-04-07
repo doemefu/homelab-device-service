@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.util.List;
 import java.util.Optional;
@@ -27,6 +29,7 @@ public class DeviceController {
 
     private final DeviceService deviceService;
     private final MqttClientService mqttClientService;
+    private final ObjectMapper objectMapper;
 
     /**
      * Returns the current state of every known device.
@@ -78,7 +81,9 @@ public class DeviceController {
 
         String deviceName = device.get().getName();
         String topic = deviceName + "/" + cmd.field() + "/man";
-        String payload = "{\"" + capitalize(cmd.field()) + "State\": " + cmd.state() + "}";
+        ObjectNode payloadNode = objectMapper.createObjectNode();
+        payloadNode.put(capitalize(cmd.field()) + "State", cmd.state());
+        String payload = payloadNode.toString();
 
         log.info("Control command: topic='{}' payload='{}'", topic, payload);
         mqttClientService.publish(topic, payload, 1, false);

@@ -1,7 +1,7 @@
 package ch.furchert.homelab.device.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -44,40 +44,44 @@ public class MqttMessageParser {
 
         String[] parts = topic.split("/");
 
-        // All known topics start with "terra"
-        if (parts.length == 0 || !parts[0].startsWith("terra")) {
+        if (!parts[0].startsWith("terra")) {
             return unknown(null);
         }
 
         String deviceName = parts[0];
 
+        // Only actual device names (terra1, terra2, …) — not terraGeneral or other prefixes
+        if (!deviceName.matches("terra\\d+")) {
+            return unknown(null);
+        }
+
         try {
-            // terra{n}/SHT35/data
-            if (parts.length >= 3
+            // terra{n}/SHT35/data — exactly 3 segments
+            if (parts.length == 3
                     && parts[1].equals("SHT35")
                     && parts[2].equals("data")) {
                 return parseSensorData(deviceName, payload);
             }
 
-            // terra{n}/mqtt/status
-            if (parts.length >= 3
+            // terra{n}/mqtt/status — exactly 3 segments
+            if (parts.length == 3
                     && parts[1].equals("mqtt")
                     && parts[2].equals("status")) {
                 return parseMqttStatus(deviceName, payload);
             }
 
-            // terra{n}/light
-            if (parts.length >= 2 && parts[1].equals("light")) {
+            // terra{n}/light — exactly 2 segments
+            if (parts.length == 2 && parts[1].equals("light")) {
                 return parseLightState(deviceName, payload);
             }
 
-            // terra{n}/nightLight
-            if (parts.length >= 2 && parts[1].equals("nightLight")) {
+            // terra{n}/nightLight — exactly 2 segments
+            if (parts.length == 2 && parts[1].equals("nightLight")) {
                 return parseNightLightState(deviceName, payload);
             }
 
-            // terra{n}/rain
-            if (parts.length >= 2 && parts[1].equals("rain")) {
+            // terra{n}/rain — exactly 2 segments
+            if (parts.length == 2 && parts[1].equals("rain")) {
                 return parseRainState(deviceName, payload);
             }
 
@@ -93,6 +97,10 @@ public class MqttMessageParser {
 
     private ParsedMqttMessage parseSensorData(String deviceName, String payload) throws Exception {
         JsonNode node = objectMapper.readTree(payload);
+        if (!node.has("Temperature") || !node.has("Humidity")) {
+            log.warn("Sensor data payload missing required fields for device '{}'", deviceName);
+            return unknown(deviceName);
+        }
         double temperature = node.get("Temperature").asDouble();
         double humidity = node.get("Humidity").asDouble();
         return new ParsedMqttMessage(
@@ -109,6 +117,10 @@ public class MqttMessageParser {
 
     private ParsedMqttMessage parseMqttStatus(String deviceName, String payload) throws Exception {
         JsonNode node = objectMapper.readTree(payload);
+        if (!node.has("MqttState")) {
+            log.warn("MQTT status payload missing 'MqttState' for device '{}'", deviceName);
+            return unknown(deviceName);
+        }
         boolean online = node.get("MqttState").asInt() == 1;
         return new ParsedMqttMessage(
                 deviceName,
@@ -124,6 +136,10 @@ public class MqttMessageParser {
 
     private ParsedMqttMessage parseLightState(String deviceName, String payload) throws Exception {
         JsonNode node = objectMapper.readTree(payload);
+        if (!node.has("LightState")) {
+            log.warn("Light state payload missing 'LightState' for device '{}'", deviceName);
+            return unknown(deviceName);
+        }
         String state = String.valueOf(node.get("LightState").asInt());
         return new ParsedMqttMessage(
                 deviceName,
@@ -139,6 +155,10 @@ public class MqttMessageParser {
 
     private ParsedMqttMessage parseNightLightState(String deviceName, String payload) throws Exception {
         JsonNode node = objectMapper.readTree(payload);
+        if (!node.has("NightLightState")) {
+            log.warn("Night light payload missing 'NightLightState' for device '{}'", deviceName);
+            return unknown(deviceName);
+        }
         String state = String.valueOf(node.get("NightLightState").asInt());
         return new ParsedMqttMessage(
                 deviceName,
@@ -154,6 +174,10 @@ public class MqttMessageParser {
 
     private ParsedMqttMessage parseRainState(String deviceName, String payload) throws Exception {
         JsonNode node = objectMapper.readTree(payload);
+        if (!node.has("RainState")) {
+            log.warn("Rain state payload missing 'RainState' for device '{}'", deviceName);
+            return unknown(deviceName);
+        }
         String state = String.valueOf(node.get("RainState").asInt());
         return new ParsedMqttMessage(
                 deviceName,

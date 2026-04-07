@@ -5,7 +5,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/homelabdb
     username: ${DB_USERNAME:homelab}
-    password: ${DB_PASSWORD:homelab}
+    password: ${DB_PASSWORD}
 
   jpa:
     hibernate:
@@ -41,6 +41,9 @@ app:
     token: ${INFLUX_TOKEN}
     org: ${INFLUX_ORG:homelab}
     bucket: ${INFLUX_BUCKET:iot-bucket}
+
+  websocket:
+    allowed-origins: "*"
 
   scheduler:
     poll-interval: 60000

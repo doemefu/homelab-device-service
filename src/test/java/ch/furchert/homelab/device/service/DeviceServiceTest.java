@@ -95,6 +95,81 @@ class DeviceServiceTest {
     }
 
     // -------------------------------------------------------------------------
+    // updateDeviceState — LIGHT_STATE
+    // -------------------------------------------------------------------------
+
+    @Test
+    void updateDeviceState_lightState_updatesLightAndLastSeen() {
+        Device existing = Device.builder().name("terra1").build();
+        when(deviceRepository.findByName("terra1")).thenReturn(Optional.of(existing));
+        when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ParsedMqttMessage msg = new ParsedMqttMessage(
+                "terra1",
+                ParsedMqttMessage.MessageType.LIGHT_STATE,
+                null, null, null, "1", null, null
+        );
+
+        deviceService.updateDeviceState(msg);
+
+        ArgumentCaptor<Device> savedCaptor = ArgumentCaptor.forClass(Device.class);
+        verify(deviceRepository).save(savedCaptor.capture());
+        assertThat(savedCaptor.getValue().getLight()).isEqualTo("1");
+        assertThat(savedCaptor.getValue().getLastSeen()).isNotNull();
+        verify(webSocketBroadcastService).broadcastDeviceState(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // updateDeviceState — NIGHT_LIGHT_STATE
+    // -------------------------------------------------------------------------
+
+    @Test
+    void updateDeviceState_nightLightState_updatesNightLightAndLastSeen() {
+        Device existing = Device.builder().name("terra1").build();
+        when(deviceRepository.findByName("terra1")).thenReturn(Optional.of(existing));
+        when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ParsedMqttMessage msg = new ParsedMqttMessage(
+                "terra1",
+                ParsedMqttMessage.MessageType.NIGHT_LIGHT_STATE,
+                null, null, null, null, "0", null
+        );
+
+        deviceService.updateDeviceState(msg);
+
+        ArgumentCaptor<Device> savedCaptor = ArgumentCaptor.forClass(Device.class);
+        verify(deviceRepository).save(savedCaptor.capture());
+        assertThat(savedCaptor.getValue().getNightLight()).isEqualTo("0");
+        assertThat(savedCaptor.getValue().getLastSeen()).isNotNull();
+        verify(webSocketBroadcastService).broadcastDeviceState(any());
+    }
+
+    // -------------------------------------------------------------------------
+    // updateDeviceState — RAIN_STATE
+    // -------------------------------------------------------------------------
+
+    @Test
+    void updateDeviceState_rainState_updatesRainAndLastSeen() {
+        Device existing = Device.builder().name("terra2").build();
+        when(deviceRepository.findByName("terra2")).thenReturn(Optional.of(existing));
+        when(deviceRepository.save(any(Device.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ParsedMqttMessage msg = new ParsedMqttMessage(
+                "terra2",
+                ParsedMqttMessage.MessageType.RAIN_STATE,
+                null, null, null, null, null, "1"
+        );
+
+        deviceService.updateDeviceState(msg);
+
+        ArgumentCaptor<Device> savedCaptor = ArgumentCaptor.forClass(Device.class);
+        verify(deviceRepository).save(savedCaptor.capture());
+        assertThat(savedCaptor.getValue().getRain()).isEqualTo("1");
+        assertThat(savedCaptor.getValue().getLastSeen()).isNotNull();
+        verify(webSocketBroadcastService).broadcastDeviceState(any());
+    }
+
+    // -------------------------------------------------------------------------
     // updateDeviceState — UNKNOWN
     // -------------------------------------------------------------------------
 
