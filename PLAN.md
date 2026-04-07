@@ -6,12 +6,12 @@ The device-service is the **third service to build** (M2 in milestones, but buil
 
 **Repo:** `github.com/doemefu/homelab-device-service`
 **Port:** 8081
-**Database:** PostgreSQL — `devices` table (owns it), reads `schedules` table (data-service owns it)
+**Database:** PostgreSQL — `devices` table + `schedules` table (owns both)
 **InfluxDB:** Write-only (sensor measurements)
 **MQTT:** Eclipse Paho — subscribe to device topics, publish commands
 **WebSocket:** STOMP at `/ws`, broadcast device state changes
 **Package:** `ch.furchert.homelab.device`
-**Depends on:** auth-service (JWKS), data-service (owns `schedules` table)
+**Depends on:** auth-service (JWKS)
 
 ---
 
@@ -31,7 +31,7 @@ The device-service is the **third service to build** (M2 in milestones, but buil
 
 ## Spring Boot 4.0 Migration Notes
 
-- **Flyway:** Use `spring-boot-starter-flyway` (selected in start.spring.io), no separate `flyway-database-postgresql`
+- **Flyway:** Use `spring-boot-starter-flyway` + `flyway-database-postgresql` (required since Flyway 10)
 - **Jackson 3:** New group ID `tools.jackson` — affects MQTT JSON message parsing
 - **Testing:** Add `@AutoConfigureMockMvc` explicitly for MockMvc tests
 - **WebSocket:** Spring Boot 4.0.5 fixed a WebSocket+Jackson startup bug (`#49749`) — use 4.0.5+
@@ -43,7 +43,7 @@ The device-service is the **third service to build** (M2 in milestones, but buil
 
 1. Create GitHub repo `doemefu/homelab-device-service`
 2. Generate Spring Boot project at **start.spring.io** with settings below
-3. Auth-service deployed (JWKS). Data-service deployed (`schedules` table exists in DB)
+3. Auth-service deployed (JWKS)
 
 ### start.spring.io Settings
 
@@ -155,7 +155,7 @@ CREATE TABLE devices (
 INSERT INTO devices (name) VALUES ('terra1'), ('terra2');
 ```
 
-**Important:** This service does NOT create the `schedules` table. Data-service owns it. The `Schedule` entity here is read-only (no Flyway migration).
+The `schedules` table is created by Flyway V2 in this service.
 
 ---
 
@@ -165,7 +165,7 @@ INSERT INTO devices (name) VALUES ('terra1'), ('terra2');
 |------|-----------|-------|-----------|
 | 1 | Flyway V1 migration | `db/migration/V1__create_devices.sql` | Schema first |
 | 2 | Device entity + repository | `entity/Device.java`, `repository/DeviceRepository.java` | Foundation |
-| 3 | Schedule entity (read-only) | `entity/Schedule.java`, `repository/ScheduleRepository.java` | Scheduler reads this, no migration |
+| 3 | Schedule entity + Flyway V2 | `entity/Schedule.java`, `repository/ScheduleRepository.java`, `db/migration/V2__create_schedules.sql` | Scheduler owns this table |
 | 4 | SecurityConfig (OAuth2 Resource Server) | `config/SecurityConfig.java` | JWKS validation, same pattern as data-service |
 | 5 | MQTT config + client | `config/MqttProperties.java`, `service/MqttClientService.java` | Core capability, test early |
 | 6 | MQTT message parser | `service/MqttMessageParser.java` | Parse JSON payloads by topic pattern |
@@ -225,9 +225,9 @@ INSERT INTO devices (name) VALUES ('terra1'), ('terra2');
 - Broadcast to `/topic/terrarium/{deviceName}` on every device state change
 - Auth optional for WebSocket (read-only broadcast)
 
-### Schedule Entity (read-only)
-- JPA entity mapped to `schedules` table, but **no Flyway migration** here
-- Data-service owns the table and its schema evolution
+### Schedule Entity
+- JPA entity mapped to `schedules` table, created by Flyway V2 in this service
+- Device-service owns the table and its schema evolution
 
 ### Flyway
 - `spring.flyway.table=flyway_schema_history_device` (separate from other services)

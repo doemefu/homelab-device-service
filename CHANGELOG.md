@@ -8,7 +8,7 @@
 - MQTT message parser for all topic patterns (sensor data, device status, light/nightlight/rain state)
 - Device state persistence in PostgreSQL (`devices` table via Flyway V1)
 - InfluxDB writer for sensor measurements (write-only, measurement `terrarium`)
-- Scheduler service reading from `schedules` table (owned by data-service), registering CronTriggers
+- Scheduler service with `schedules` table (Flyway V2), registering CronTriggers
 - WebSocket broadcast (STOMP at `/ws`, topics `/topic/terrarium/{deviceName}`)
 - Device control REST endpoint (`POST /devices/{id}/control` -> MQTT publish)
 - Device list REST endpoints (`GET /devices`, `GET /devices/{id}`)

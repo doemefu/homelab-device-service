@@ -84,7 +84,7 @@ Never edit or delete an existing migration file — Flyway checksums will fail o
 
 The Flyway history table is named `flyway_schema_history_device` to avoid conflicts when multiple services share the same PostgreSQL instance.
 
-**Important:** This service does NOT create or migrate the `schedules` table — data-service owns it.
+This service owns both the `devices` and `schedules` tables. Migrations live in `src/main/resources/db/migration/`.
 
 ---
 

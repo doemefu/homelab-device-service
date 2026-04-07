@@ -39,6 +39,9 @@ build/
 src/main/resources/keys/
 src/test/resources/keys/
 
+### Local AI agent planning files (not for public repo) ###
+docs/superpowers/
+
 ### Environment ###
 .env
 *.pem

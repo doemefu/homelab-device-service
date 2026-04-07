@@ -1,7 +1,9 @@
 package ch.furchert.homelab.device;
 
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -28,6 +30,12 @@ import java.time.Duration;
  */
 @Testcontainers(disabledWithoutDocker = true)
 public abstract class AbstractIntegrationTest {
+
+    // Spring Security 7 eagerly resolves the JwtDecoder bean at startup.
+    // Provide a mock so integration tests don't need a real JWKS endpoint.
+    @MockitoBean
+    @SuppressWarnings("unused")
+    private JwtDecoder jwtDecoder;
 
     // ------------------------------------------------------------------
     // PostgreSQL
@@ -90,6 +98,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
 
+
         // MQTT — anonymous broker; username and password are required by
         // MqttProperties binding but are ignored by the broker.
         registry.add("app.mqtt.broker-url",
@@ -104,12 +113,9 @@ public abstract class AbstractIntegrationTest {
         registry.add("app.influxdb.org", () -> "homelab");
         registry.add("app.influxdb.bucket", () -> "iot-bucket");
 
-        // Disable JWT validation: point at a port that is definitely not
-        // a JWKS endpoint so the resource server does not block context startup.
-        // The OAuth2 resource server only validates tokens when requests arrive;
-        // with webEnvironment=NONE and no HTTP calls in integration tests the
-        // startup itself is not gated on a reachable JWKS endpoint.
+        // Suppress JWKS auto-configuration — the @MockitoBean JwtDecoder
+        // in the base class satisfies Spring Security 7 without a real endpoint.
         registry.add("spring.security.oauth2.resourceserver.jwt.jwk-set-uri",
-                () -> "http://localhost:19999/auth/jwks");
+                () -> "https://not-used");
     }
 }
