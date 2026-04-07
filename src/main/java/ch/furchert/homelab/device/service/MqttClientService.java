@@ -88,9 +88,8 @@ public class MqttClientService implements MqttCallbackExtended {
 
             log.info("Connecting to MQTT broker {} as client '{}'", props.getBrokerUrl(), props.getClientId());
             client.connect(opts);
-
-            subscribeAll();
-            publishStatus(ONLINE_PAYLOAD);
+            // subscribeAll() and publishStatus() are called from connectComplete(),
+            // which fires for both initial connect and reconnect — keeping a single code path.
 
         } catch (MqttException e) {
             log.error("Failed to connect to MQTT broker: {}", e.getMessage(), e);
@@ -128,11 +127,13 @@ public class MqttClientService implements MqttCallbackExtended {
     public void connectComplete(boolean reconnect, String brokerUri) {
         if (reconnect) {
             log.info("Reconnected to MQTT broker {}", brokerUri);
-            subscribeAll();
-            publishStatus(ONLINE_PAYLOAD);
         } else {
-            log.debug("Initial connect complete to {}", brokerUri);
+            log.info("Connected to MQTT broker {}", brokerUri);
         }
+        // Subscribe and publish status for both initial connect and reconnect.
+        // This is the single authoritative code path for post-connect setup.
+        subscribeAll();
+        publishStatus(ONLINE_PAYLOAD);
     }
 
     /** Delegates an incoming message to {@link MqttMessageHandler}. */

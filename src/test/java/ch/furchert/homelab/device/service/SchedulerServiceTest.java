@@ -57,6 +57,16 @@ class SchedulerServiceTest {
                 schedulerService, "activeTasks");
     }
 
+    @SuppressWarnings("unchecked")
+    private ConcurrentHashMap<Long, String> taskFingerprints() {
+        return (ConcurrentHashMap<Long, String>) ReflectionTestUtils.getField(
+                schedulerService, "taskFingerprints");
+    }
+
+    private static String fingerprint(Schedule s) {
+        return s.getCronExpression() + "|" + s.getField() + "|" + s.getPayload();
+    }
+
     private Schedule buildSchedule(Long id, String field, String cron) {
         return Schedule.builder()
                 .id(id)
@@ -115,6 +125,32 @@ class SchedulerServiceTest {
     }
 
     // -------------------------------------------------------------------------
+    // Changed schedule definition → task cancelled and re-registered
+    // -------------------------------------------------------------------------
+
+    @Test
+    void reloadSchedules_changedScheduleDefinition_cancelsAndReRegisters() {
+        Schedule updated = buildSchedule(1L, "light", "0 0 20 * * *"); // cron changed
+        when(scheduleRepository.findByActiveTrue()).thenReturn(List.of(updated));
+
+        @SuppressWarnings("unchecked")
+        ScheduledFuture<?> oldFuture = mock(ScheduledFuture.class);
+        activeTasks().put(1L, oldFuture);
+        // Seed old fingerprint with a different cron to simulate a change
+        taskFingerprints().put(1L, "0 0 8 * * *|light|{\"LightState\": 1}");
+
+        @SuppressWarnings("unchecked")
+        ScheduledFuture<Object> newFuture = mock(ScheduledFuture.class);
+        doReturn(newFuture).when(taskScheduler).schedule(any(Runnable.class), any(CronTrigger.class));
+
+        schedulerService.reloadSchedules();
+
+        verify(oldFuture).cancel(false);
+        verify(taskScheduler).schedule(any(Runnable.class), any(CronTrigger.class));
+        assertThat((Object) activeTasks().get(1L)).isSameAs(newFuture);
+    }
+
+    // -------------------------------------------------------------------------
     // Invalid cron → skipped, no exception
     // -------------------------------------------------------------------------
 
@@ -145,6 +181,8 @@ class SchedulerServiceTest {
         @SuppressWarnings("unchecked")
         ScheduledFuture<?> existingFuture = mock(ScheduledFuture.class);
         activeTasks().put(1L, existingFuture);
+        // Seed the fingerprint so the service sees the task definition as unchanged
+        taskFingerprints().put(1L, fingerprint(schedule));
 
         schedulerService.reloadSchedules();
 

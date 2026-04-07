@@ -1,5 +1,7 @@
 package ch.furchert.homelab.device.dto;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -12,5 +14,5 @@ import jakarta.validation.constraints.Pattern;
  */
 public record ControlCommandDto(
         @NotBlank @Pattern(regexp = "^(light|nightLight|rain)$", message = "field must be one of: light, nightLight, rain") String field,
-        @NotNull Integer state
+        @NotNull @Min(0) @Max(1) Integer state
 ) {}

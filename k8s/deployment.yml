@@ -17,7 +17,9 @@ spec:
     spec:
       containers:
         - name: device-service
-          image: ghcr.io/doemefu/homelab-device-service:latest
+          # Pin to a specific image tag. Update this value before each deployment.
+          # CI generates: ghcr.io/doemefu/homelab-device-service:<git-sha>
+          image: ghcr.io/doemefu/homelab-device-service:0.0.1
           ports:
             - containerPort: 8081
           env:

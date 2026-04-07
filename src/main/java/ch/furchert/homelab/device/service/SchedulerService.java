@@ -39,6 +39,13 @@ public class SchedulerService {
     /** Tracks the running {@link ScheduledFuture} for each active schedule by its database ID. */
     private final ConcurrentHashMap<Long, ScheduledFuture<?>> activeTasks = new ConcurrentHashMap<>();
 
+    /**
+     * Fingerprint of each registered schedule: {@code cronExpression|payload}.
+     * Used to detect when an existing schedule's definition changes so that the
+     * old task is cancelled and a new one is registered with the updated values.
+     */
+    private final ConcurrentHashMap<Long, String> taskFingerprints = new ConcurrentHashMap<>();
+
     public SchedulerService(ScheduleRepository scheduleRepository,
                             MqttClientService mqttClientService,
                             ThreadPoolTaskScheduler taskScheduler) {
@@ -70,23 +77,29 @@ public class SchedulerService {
         Map<Long, Schedule> currentMap = current.stream()
                 .collect(Collectors.toMap(Schedule::getId, s -> s));
 
-        // Cancel tasks that are no longer in the active set
+        // Cancel tasks that are no longer in the active set or whose definition changed
         activeTasks.keySet().removeIf(id -> {
-            if (!currentMap.containsKey(id)) {
+            Schedule existing = currentMap.get(id);
+            boolean removed = existing == null;
+            boolean changed = !removed
+                    && !fingerprint(existing).equals(taskFingerprints.getOrDefault(id, ""));
+            if (removed || changed) {
                 ScheduledFuture<?> future = activeTasks.get(id);
                 if (future != null) {
                     future.cancel(false);
                 }
-                log.debug("Cancelled scheduler task for schedule id={}", id);
+                taskFingerprints.remove(id);
+                log.debug("Cancelled scheduler task for schedule id={} ({})",
+                        id, removed ? "removed" : "definition changed");
                 return true;
             }
             return false;
         });
 
-        // Register tasks for newly added schedules
+        // Register tasks for new schedules (or re-register after a definition change)
         for (Schedule schedule : currentMap.values()) {
             if (activeTasks.containsKey(schedule.getId())) {
-                // Task already running — nothing to do
+                // Task already running with same definition — nothing to do
                 continue;
             }
 
@@ -100,6 +113,7 @@ public class SchedulerService {
                 ScheduledFuture<?> future = taskScheduler.schedule(task, trigger);
                 if (future != null) {
                     activeTasks.put(schedule.getId(), future);
+                    taskFingerprints.put(schedule.getId(), fingerprint(schedule));
                     log.debug("Registered scheduler task for schedule id={} cron='{}' topic='{}'",
                             schedule.getId(), schedule.getCronExpression(), topic);
                 } else {
@@ -112,5 +126,14 @@ public class SchedulerService {
         }
 
         log.info("Schedules reloaded: {} active tasks", activeTasks.size());
+    }
+
+    /**
+     * Returns a fingerprint string that captures the schedule fields that define
+     * what the task does and when. A change in any of these fields requires the
+     * old task to be cancelled and a new one registered.
+     */
+    private static String fingerprint(Schedule schedule) {
+        return schedule.getCronExpression() + "|" + schedule.getField() + "|" + schedule.getPayload();
     }
 }
