@@ -151,9 +151,9 @@ Common causes: database unreachable, migration checksum mismatch.
    ```bash
    kubectl logs -n apps deployment/device-service | grep -i scheduler
    ```
-2. Verify the `schedules` table is accessible — data-service must have run its Flyway migration:
+2. Verify the `schedules` table exists (this service creates it via Flyway V2):
    ```bash
-   kubectl logs -n apps deployment/data-service | grep -i flyway
+   kubectl logs -n apps deployment/device-service | grep -i flyway
    ```
 3. Restart to force a schedule reload:
    ```bash

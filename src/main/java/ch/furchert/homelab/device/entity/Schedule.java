@@ -4,11 +4,10 @@ import jakarta.persistence.*;
 import lombok.*;
 
 /**
- * Read-only JPA entity mapped to the {@code schedules} table.
+ * JPA entity mapped to the {@code schedules} table.
  * <p>
- * This table is owned and migrated by the homelab-data-service. This service
- * only reads from it to drive the in-process scheduler. No Flyway migration
- * for this table exists here and none should ever be added.
+ * Stores cron-based schedules that the {@link ch.furchert.homelab.device.service.SchedulerService}
+ * uses to publish MQTT commands at defined times.
  */
 @Entity
 @Table(name = "schedules")

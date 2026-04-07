@@ -7,10 +7,6 @@ import java.util.List;
 
 /**
  * Spring Data repository for {@link Schedule} entities.
- * <p>
- * Provides read access to the {@code schedules} table, which is owned by
- * homelab-data-service. Only query methods are used; writes go through the
- * data-service REST API.
  */
 public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
 

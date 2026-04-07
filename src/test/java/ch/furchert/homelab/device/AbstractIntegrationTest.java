@@ -90,6 +90,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
 
+
         // MQTT — anonymous broker; username and password are required by
         // MqttProperties binding but are ignored by the broker.
         registry.add("app.mqtt.broker-url",

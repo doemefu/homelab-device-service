@@ -15,7 +15,7 @@ Real-time IoT device management service for the doemefu homelab ecosystem -- MQT
 - WebSocket broadcast (STOMP, live device state to frontend)
 - Device control REST endpoint (manual toggle -- publishes MQTT command)
 
-**Does NOT:** handle user authentication or user CRUD (auth-service), query historical InfluxDB data for charts (data-service), or own the `schedules` table (data-service).
+**Does NOT:** handle user authentication or user CRUD (auth-service), or query historical InfluxDB data for charts (data-service).
 
 ---
 
@@ -152,15 +152,14 @@ This service is 1 of 3 microservices in the homelab IoT stack.
               ┌─────────────────┐   ┌─────────────────┐
   MQTT <----> │ device-service  │   │  data-service    │
   InfluxDB <--│ (port 8081)     │   │  (port 8082)     │
-              └────────┬────────┘   └────────┬─────────┘
-                       │    reads schedules   │
-                       └──────────────────────┘
-                            (shared DB table)
+              │ owns: devices,  │   │                  │
+              │   schedules     │   │                  │
+              └─────────────────┘   └──────────────────┘
 ```
 
 - **auth-service** -- issues JWTs, exposes JWKS endpoint
 - **device-service** (this repo) -- validates JWTs via JWKS, manages real-time device state, writes to InfluxDB, publishes/subscribes MQTT
-- **data-service** -- owns the `schedules` table (device-service reads it), serves historical InfluxDB queries
+- **data-service** -- serves historical InfluxDB queries to consuming services
 
 **Key design:** This is a long-running, stateful service. It maintains persistent MQTT connections and in-process scheduled tasks. Restarting briefly disconnects from MQTT but reconnects automatically (Eclipse Paho auto-reconnect + LWT).
 
@@ -184,6 +183,6 @@ CI/CD has not yet been set up. It will follow the same pattern as auth-service -
 |------|-------------|
 | [homelab](https://github.com/doemefu/homelab) | Infrastructure-as-Code -- Ansible, K3s cluster, platform services (PostgreSQL, InfluxDB, Mosquitto) |
 | [homelab-auth-service](https://github.com/doemefu/homelab-auth-service) | JWT authentication -- user CRUD, token issuance, JWKS endpoint |
-| homelab-data-service | Historical data queries (InfluxDB) + schedule CRUD (not yet created) |
+| homelab-data-service | Historical data queries (InfluxDB) for consuming services (not yet created) |
 
 Full architecture docs (migration plan, current/target architecture, cross-service contracts): [homelab/docs/](https://github.com/doemefu/homelab/tree/main/docs)

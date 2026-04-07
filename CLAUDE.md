@@ -10,14 +10,14 @@ Real-time IoT device management service for the homelab IoT ecosystem. Subscribe
 
 **Port:** 8081
 **Package:** `ch.furchert.homelab.device`
-**Database:** PostgreSQL — `devices` table (owns it), reads `schedules` table (data-service owns it)
+**Database:** PostgreSQL — `devices` table + `schedules` table (owns both)
 **InfluxDB:** Write-only (sensor measurements)
 **MQTT:** Eclipse Paho — subscribe + publish
 **WebSocket:** STOMP at `/ws`
 
 ## Architecture Context
 
-This is 1 of 3 microservices. The most complex service — long-running, stateful (persistent MQTT connections + in-process scheduler). Validates JWTs via auth-service JWKS endpoint. Reads schedules from data-service's table.
+This is 1 of 3 microservices. The most complex service — long-running, stateful (persistent MQTT connections + in-process scheduler). Validates JWTs via auth-service JWKS endpoint. Owns the schedules table and runs cron-based MQTT commands.
 
 **Full architecture spec:** `../../docs/052-architecture-target.md`
 **Implementation plan:** `PLAN.md`
@@ -28,7 +28,7 @@ This is 1 of 3 microservices. The most complex service — long-running, statefu
 - Do **not** use `latest` for any dependency version — all versions pinned
 - Do **not** use `ddl-auto=update` or `ddl-auto=create` — Flyway only
 - Do **not** log tokens, MQTT passwords, or secrets
-- Do **not** create Flyway migrations for the `schedules` table — data-service owns it
+- Do **not** create Flyway migrations for tables owned by other services
 - Do **not** introduce new dependencies without explicit user approval
 - All comments and documentation in **English**
 - Minimize diff size: no drive-by refactors
@@ -46,7 +46,7 @@ This is 1 of 3 microservices. The most complex service — long-running, statefu
 
 ## Spring Boot 4.0 Notes
 
-- Flyway via `spring-boot-starter-flyway` (no separate dialect dep)
+- Flyway via `spring-boot-starter-flyway` + `flyway-database-postgresql` (required since Flyway 10)
 - Jackson 3 (`tools.jackson` group ID) — affects MQTT JSON parsing
 - `@SpringBootTest` needs explicit `@AutoConfigureMockMvc` for MockMvc
 - Spring Security 7.0, OAuth2 Resource Server
@@ -54,7 +54,7 @@ This is 1 of 3 microservices. The most complex service — long-running, statefu
 
 ## Service-Specific Conventions
 
-- Flyway for `devices` table only (`spring.flyway.table=flyway_schema_history_device`)
+- Flyway for `devices` + `schedules` tables (`spring.flyway.table=flyway_schema_history_device`)
 - `spring.jpa.hibernate.ddl-auto=validate`
 - Package structure: `config/`, `controller/`, `dto/`, `entity/`, `repository/`, `service/`, `security/`, `exception/`
 - OAuth2 Resource Server for JWT validation
