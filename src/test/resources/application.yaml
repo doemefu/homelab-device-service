@@ -1,12 +1,6 @@
 spring:
   autoconfigure:
     exclude: io.sentry.spring.boot.jakarta.SentryAutoConfiguration
-
-sentry:
-  enabled: false
-  dsn:
-
-spring:
   jpa:
     hibernate:
       ddl-auto: validate
@@ -14,6 +8,10 @@ spring:
   flyway:
     enabled: true
     table: flyway_schema_history_device
+
+sentry:
+  enabled: false
+  dsn:
 
 app:
   mqtt:
