@@ -7,5 +7,7 @@ sentry:
   dsn:
 
 app:
+  mqtt:
+    client-id: device-service-test
   scheduler:
-    poll-interval: 1000
+    poll-interval: 60000
