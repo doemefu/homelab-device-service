@@ -5,3 +5,7 @@ spring:
 sentry:
   enabled: false
   dsn:
+
+app:
+  scheduler:
+    poll-interval: 1000
