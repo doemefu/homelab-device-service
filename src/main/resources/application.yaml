@@ -59,3 +59,15 @@ springdoc:
     path: /api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: production
+  send-default-pii: false
+  traces-sample-rate: 0.0
+  logging:
+    enabled: true
+    minimum-event-level: ERROR
+    minimum-breadcrumb-level: WARN
+  tags:
+    service: device-service
