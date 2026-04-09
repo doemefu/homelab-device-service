@@ -95,6 +95,8 @@ public class MqttClientService implements MqttCallbackExtended {
 
         } catch (MqttException e) {
             log.error("Failed to connect to MQTT broker: {}", e.getMessage(), e);
+        } catch (Exception e) {
+            log.error("Unexpected error during MQTT client initialisation: {}", e.getMessage(), e);
         }
     }
 
