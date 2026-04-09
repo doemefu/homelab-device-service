@@ -176,6 +176,13 @@
 			<artifactId>awaitility</artifactId>
 			<scope>test</scope>
 		</dependency>
+
+		<!-- Sentry error tracking -->
+		<dependency>
+			<groupId>io.sentry</groupId>
+			<artifactId>sentry-spring-boot-starter-jakarta</artifactId>
+			<version>8.34.1</version>
+		</dependency>
 	</dependencies>
 
 	<build>

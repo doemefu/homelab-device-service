@@ -121,7 +121,7 @@ public class SchedulerService {
                 }
             } catch (IllegalArgumentException e) {
                 log.error("Invalid cron expression '{}' for schedule id={}: {}",
-                        schedule.getCronExpression(), schedule.getId(), e.getMessage());
+                        schedule.getCronExpression(), schedule.getId(), e.getMessage(), e);
             }
         }
 
