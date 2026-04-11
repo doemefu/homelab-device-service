@@ -49,6 +49,13 @@ spec:
               value: "http://influxdb.apps.svc.cluster.local:8086"
             - name: JWKS_URI
               value: "http://auth-service.apps.svc.cluster.local:8080/auth/jwks"
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: sentry-dsn
+                  key: dsn
+            - name: SENTRY_ENVIRONMENT
+              value: "production"
           livenessProbe:
             httpGet:
               path: /actuator/health

@@ -1,0 +1,24 @@
+spring:
+  autoconfigure:
+    exclude: io.sentry.spring.boot.jakarta.SentryAutoConfiguration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    table: flyway_schema_history_device
+
+sentry:
+  enabled: false
+  dsn:
+
+app:
+  mqtt:
+    client-id: device-service-test
+    topics: terra1/#,terra2/#,terraGeneral/#
+    qos: 1
+    will-topic: javaBackend/mqtt/status
+    will-payload: '{"MqttState": 0}'
+  scheduler:
+    poll-interval: 60000
