@@ -54,6 +54,8 @@ spec:
                 secretKeyRef:
                   name: sentry-dsn
                   key: dsn
+            - name: SENTRY_ENVIRONMENT
+              value: "production"
           livenessProbe:
             httpGet:
               path: /actuator/health

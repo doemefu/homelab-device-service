@@ -62,7 +62,7 @@ springdoc:
 
 sentry:
   dsn: ${SENTRY_DSN:}
-  environment: production
+  environment: ${SENTRY_ENVIRONMENT:production}
   send-default-pii: false
   traces-sample-rate: 0.0
   logging:
