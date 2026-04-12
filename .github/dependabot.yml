@@ -5,7 +5,26 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      spring-stack:
+        patterns:
+          - "org.springframework.boot*"
+          - "org.springframework.security*"
+          - "org.springframework*"
+      testcontainers:
+        patterns:
+          - "org.testcontainers*"
+      observability:
+        patterns:
+          - "org.springdoc*"
+          - "io.sentry*"
+
   - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
     directory: "/"
     schedule:
       interval: weekly
