@@ -97,10 +97,11 @@ GitHub Actions workflow: `.github/workflows/build.yml`
 
 **On push to `main` only (after tests pass):**
 - `build-and-push` job: builds a multi-arch Docker image (`linux/amd64` + `linux/arm64`) via `docker/build-push-action` and pushes to GHCR (`ghcr.io/doemefu/homelab-device-service`)
-- Image is tagged with the Git SHA (short) and `latest`
+- Two tags are pushed: `<git-sha>` (content-addressable, for debugging) and `main-YYYYMMDDTHHMMSS` (timestamp tag used by Flux CD)
+- The `latest` tag is not pushed — Flux CD uses the sortable timestamp tag to select the newest image
 - Build cache is stored in GitHub Actions Cache for faster rebuilds
 
-After a successful CI run, update `k8s/deployment.yml` with the new image tag before deploying to the cluster.
+**No manual image tag update is needed.** Flux CD automatically detects the new `main-*` tag on GHCR, commits the updated tag to `k8s/deployment.yaml`, and rolls out the new pod.
 
 ---
 

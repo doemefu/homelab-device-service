@@ -4,13 +4,39 @@
 
 ## device-service Deployment
 
-### Manifest
+### Automated deployment (Flux CD)
 
+`device-service` is managed by **Flux CD**. Do not `kubectl apply` the manifests manually — Flux will overwrite any manual change within the next reconciliation interval (≤10 min).
+
+**Deploying a new version:** Push to `main`. CI builds a new image with a `main-YYYYMMDDTHHMMSS` tag. Flux detects it within 5 min, commits the updated tag to `k8s/deployment.yaml` in this repo, and the `Kustomization` applies the change to the cluster automatically.
+
+**Checking status:**
 ```bash
-kubectl apply -f k8s/deployment.yml
+flux get kustomizations -n flux-system          # reconciliation state
+flux get image updates -n flux-system           # last automation commit
+kubectl rollout status deployment/device-service -n apps
 ```
 
-Deploys a `Deployment` (1 replica) and a `Service` in namespace `apps`. Port: 8081.
+**Forcing a reconciliation:**
+```bash
+flux reconcile kustomization device-service -n flux-system --with-source
+```
+
+**Suspending automation** (e.g. for an emergency image pin):
+```bash
+flux suspend image update device-service -n flux-system
+# Update image tag manually in k8s/deployment.yaml if needed, then:
+flux resume image update device-service -n flux-system
+```
+
+### Manifests
+
+```
+k8s/deployment.yaml    — Deployment + ClusterIP Service (namespace: apps, port: 8081)
+k8s/kustomization.yaml — Kustomize base consumed by Flux
+```
+
+The `image:` line in `k8s/deployment.yaml` carries a `$imagepolicy` marker — Flux rewrites it on each automated update. Do not remove the marker comment.
 
 ### Required Kubernetes Secret
 
@@ -26,17 +52,6 @@ kubectl create secret generic device-service-secrets \
 ```
 
 > In production, create this secret via the SOPS-backed Ansible playbook rather than `kubectl create` — see the cluster-level DEPLOYMENT.md for the secrets pattern.
-
-### Image tag
-
-The manifest pins the image to a specific tag. After each CI build, update the tag in `k8s/deployment.yml` to the new Git SHA before applying:
-
-```bash
-# Set IMAGE_TAG to the SHA from the GitHub Actions build output
-kubectl set image deployment/device-service \
-  device-service=ghcr.io/doemefu/homelab-device-service:${IMAGE_TAG} \
-  -n apps
-```
 
 ### Post-deploy verification
 
