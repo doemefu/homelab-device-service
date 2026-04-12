@@ -51,8 +51,9 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository }}
+          # content-addressable tag retained for debugging
           tags: |
-            type=sha,prefix=            # content-addressable tag retained for debugging
+            type=sha,prefix=
             type=raw,value=main-{{date 'YYYYMMDDTHHmmss'}},enable={{is_default_branch}}
 
       - name: Build and push multi-arch image

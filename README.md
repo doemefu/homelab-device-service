@@ -171,9 +171,11 @@ Manifests are in `k8s/`:
 - `k8s/deployment.yaml` — Deployment + ClusterIP Service in namespace `apps`; image tag managed by Flux CD (do not edit the tag manually)
 - `k8s/kustomization.yaml` — Kustomize base consumed by Flux
 
-Required Secret `device-service-secrets` must exist in namespace `apps` before the first deploy (see `DEPLOYMENT.md`).
+Required Secrets must exist in namespace `apps` before the first deploy (see `DEPLOYMENT.md`):
+- `device-service-secrets`
+- `sentry-dsn` — must contain the Sentry DSN under key `dsn`
 
-**Deployments are automated via Flux CD.** Push to `main` — CI builds a new `main-YYYYMMDDTHHMMSS` image, Flux detects it within 5 min, commits the updated tag to this repo, and the cluster rolls out the new pod automatically. No manual `kubectl` steps needed.
+**Deployments are automated via Flux CD.** Push to `main` — CI builds a new `main-YYYYMMDDTHHmmss` image, Flux detects it within 5 min, commits the updated tag to this repo, and the cluster rolls out the new pod automatically. No manual `kubectl` steps needed.
 
 ---
 
@@ -186,7 +188,7 @@ GitHub Actions workflow at `.github/workflows/build.yml`:
 
 Two image tags are pushed per build:
 - `<git-sha>` — content-addressable, retained for debugging
-- `main-YYYYMMDDTHHMMSS` — timestamp tag used by Flux CD for automatic deployment
+- `main-YYYYMMDDTHHmmss` — timestamp tag used by Flux CD for automatic deployment
 
 The `latest` tag is not pushed. Flux CD selects the newest `main-*` tag via `ImagePolicy` and updates `k8s/deployment.yaml` automatically.
 
