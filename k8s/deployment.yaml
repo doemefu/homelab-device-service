@@ -17,9 +17,8 @@ spec:
     spec:
       containers:
         - name: device-service
-          # Pin to a specific image tag. Update this value before each deployment.
-          # CI generates: ghcr.io/doemefu/homelab-device-service:<git-sha>
-          image: ghcr.io/doemefu/homelab-device-service:0.0.1
+          # Image tag is managed by Flux CD image automation.
+          image: ghcr.io/doemefu/homelab-device-service:main-20260412T130000 # {"$imagepolicy": "flux-system:device-service"}
           ports:
             - containerPort: 8081
           env:

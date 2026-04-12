@@ -167,13 +167,30 @@ This service is 1 of 3 microservices in the homelab IoT stack.
 
 ## K8s Deployment
 
-Kubernetes manifests have not yet been created. They will follow the same pattern as auth-service -- a Deployment and ClusterIP Service in namespace `apps`, with secrets for DB credentials, MQTT password, and InfluxDB token.
+Manifests are in `k8s/`:
+- `k8s/deployment.yaml` — Deployment + ClusterIP Service in namespace `apps`; image tag managed by Flux CD (do not edit the tag manually)
+- `k8s/kustomization.yaml` — Kustomize base consumed by Flux
+
+Required Secrets must exist in namespace `apps` before the first deploy (see `DEPLOYMENT.md`):
+- `device-service-secrets`
+- `sentry-dsn` — must contain the Sentry DSN under key `dsn`
+
+**Deployments are automated via Flux CD.** Push to `main` — CI builds a new `main-YYYYMMDDTHHmmss` image, Flux detects it within 5 min, commits the updated tag to this repo, and the cluster rolls out the new pod automatically. No manual `kubectl` steps needed.
 
 ---
 
 ## CI/CD
 
-CI/CD has not yet been set up. It will follow the same pattern as auth-service -- a GitHub Actions workflow with a test job (`./mvnw verify`) and a multi-arch Docker build+push job to `ghcr.io/doemefu/homelab-device-service`.
+GitHub Actions workflow at `.github/workflows/build.yml`:
+
+- **test** job: runs `./mvnw verify` on every push and PR to `main`
+- **build-and-push** job: builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes to `ghcr.io/doemefu/homelab-device-service` — runs only on push to `main` after tests pass
+
+Two image tags are pushed per build:
+- `<git-sha>` — content-addressable, retained for debugging
+- `main-YYYYMMDDTHHmmss` — timestamp tag used by Flux CD for automatic deployment
+
+The `latest` tag is not pushed. Flux CD selects the newest `main-*` tag via `ImagePolicy` and updates `k8s/deployment.yaml` automatically.
 
 ---
 
