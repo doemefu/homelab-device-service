@@ -1,6 +1,4 @@
 spring:
-  autoconfigure:
-    exclude: io.sentry.spring.boot.jakarta.SentryAutoConfiguration
   jpa:
     hibernate:
       ddl-auto: validate
