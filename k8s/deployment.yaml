@@ -57,18 +57,24 @@ spec:
                   key: dsn
             - name: SENTRY_ENVIRONMENT
               value: "production"
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            failureThreshold: 30
+            periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /actuator/health
               port: 8081
-            initialDelaySeconds: 30
             periodSeconds: 10
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /actuator/health
               port: 8081
-            initialDelaySeconds: 15
             periodSeconds: 5
+            failureThreshold: 3
           resources:
             requests:
               memory: "256Mi"
