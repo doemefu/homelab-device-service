@@ -42,6 +42,8 @@ spec:
                 secretKeyRef:
                   name: device-service-secrets
                   key: influx-token
+            - name: DB_URL
+              value: "jdbc:postgresql://postgres.apps.svc.cluster.local:5432/homelabdb"
             - name: MQTT_BROKER_URL
               value: "tcp://mosquitto.apps.svc.cluster.local:1883"
             - name: INFLUX_URL

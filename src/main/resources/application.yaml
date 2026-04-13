@@ -3,7 +3,7 @@ spring:
     name: device-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/homelabdb
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/homelabdb}
     username: ${DB_USERNAME:homelab}
     password: ${DB_PASSWORD}
 
