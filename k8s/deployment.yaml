@@ -55,6 +55,7 @@ spec:
                 secretKeyRef:
                   name: sentry-dsn
                   key: dsn
+                  optional: true
             - name: SENTRY_ENVIRONMENT
               value: "production"
           startupProbe:
