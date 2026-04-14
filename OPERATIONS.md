@@ -116,7 +116,8 @@ All secrets are sourced from the `device-service-secrets` Kubernetes Secret (see
 | `INFLUX_URL` | Env / ConfigMap | InfluxDB HTTP endpoint (default: `http://influxdb.apps.svc.cluster.local:8086`) |
 | `INFLUX_ORG` | Env / ConfigMap | InfluxDB organisation (default: `homelab`) |
 | `INFLUX_BUCKET` | Env / ConfigMap | InfluxDB bucket for sensor data (default: `iot-bucket`) |
-| `JWKS_URI` | Env / ConfigMap | Auth-service JWKS endpoint (default: `http://auth-service.apps.svc.cluster.local:8080/auth/jwks`) |
+| `JWKS_URI` | Env / ConfigMap | Auth-service JWKS endpoint (default: `http://auth-service.apps.svc.cluster.local:8080/oauth2/jwks`) |
+| `DEVICE_SERVICE_CLIENT_SECRET` | Secret `device-service-secrets` / key `device-service-client-secret` | OIDC client secret for Swagger SSO login |
 
 ---
 
@@ -171,6 +172,15 @@ Common causes: database unreachable, migration checksum mismatch.
    ```bash
    kubectl describe deployment device-service -n apps | grep JWKS_URI
    ```
+
+### Swagger login redirect loop / OAuth2 login fails
+
+1. Confirm the client secret env var is present:
+   ```bash
+   kubectl describe deployment device-service -n apps | grep DEVICE_SERVICE_CLIENT_SECRET
+   ```
+2. Verify `device-service-secrets` contains key `device-service-client-secret`.
+3. Verify auth-service has a matching `device-service` OIDC client entry and the stored secret includes a Spring Security prefix (`{noop}` or `{bcrypt}`).
 
 ---
 

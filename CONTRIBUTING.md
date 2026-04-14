@@ -28,10 +28,12 @@ export DB_USERNAME=homelab
 export DB_PASSWORD=homelab
 export MQTT_PASSWORD=<mosquitto-backend-password>
 export INFLUX_TOKEN=<influxdb-admin-token>
+export DEVICE_SERVICE_CLIENT_SECRET=<oidc-client-secret>
 ./mvnw spring-boot:run
 ```
 
 The service connects to database `homelabdb` on `localhost:5432`, Mosquitto on `localhost:1883`, and InfluxDB on `localhost:8086` (defaults in `application.yaml`).
+Auth-service must be reachable for JWT JWKS validation (`http://localhost:8080/oauth2/jwks`) and for Swagger SSO login (`https://auth.furchert.ch`).
 
 ---
 

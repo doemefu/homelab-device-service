@@ -48,8 +48,11 @@ kubectl create secret generic device-service-secrets \
   --from-literal=db-username=<postgres-user> \
   --from-literal=db-password=<postgres-password> \
   --from-literal=mqtt-password=<mosquitto-backend-password> \
-  --from-literal=influx-token=<influxdb-admin-token>
+  --from-literal=influx-token=<influxdb-admin-token> \
+  --from-literal=device-service-client-secret=<oidc-client-secret>
 ```
+
+For auth-service client registration, store the same secret there with a Spring Security encoder prefix, e.g. `{noop}<oidc-client-secret>`.
 
 > In production, create this secret via the SOPS-backed Ansible playbook rather than `kubectl create` — see the cluster-level DEPLOYMENT.md for the secrets pattern.
 

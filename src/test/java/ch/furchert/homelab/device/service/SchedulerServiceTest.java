@@ -5,6 +5,7 @@ import ch.furchert.homelab.device.repository.ScheduleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -12,7 +13,6 @@ import org.springframework.scheduling.support.CronTrigger;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 
@@ -190,5 +190,71 @@ class SchedulerServiceTest {
         verifyNoInteractions(taskScheduler);
         // The existing future must remain unchanged
         assertThat((Object) activeTasks().get(1L)).isSameAs(existingFuture);
+    }
+
+    // -------------------------------------------------------------------------
+    // Runnable execution — verify actual MQTT publish topic and payload
+    // -------------------------------------------------------------------------
+
+    @Test
+    void reloadSchedules_taskRunnable_publishesToCorrectTopicAndPayload() {
+        Schedule schedule = buildSchedule(1L, "light", "0 0 8 * * *");
+        when(scheduleRepository.findByActiveTrue()).thenReturn(List.of(schedule));
+
+        ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
+        @SuppressWarnings("unchecked")
+        ScheduledFuture<Object> mockFuture = mock(ScheduledFuture.class);
+        doReturn(mockFuture)
+                .when(taskScheduler).schedule(runnableCaptor.capture(), any(CronTrigger.class));
+
+        schedulerService.reloadSchedules();
+
+        // Run the captured task as if the cron fired
+        runnableCaptor.getValue().run();
+
+        verify(mqttClientService).publish(
+                "terraGeneral/light/schedule",
+                "{\"LightState\": 1}",
+                1,
+                false
+        );
+    }
+
+    @Test
+    void reloadSchedules_taskRunnable_rainField_publishesToRainScheduleTopic() {
+        Schedule schedule = buildSchedule(2L, "rain", "0 0 20 * * *");
+        when(scheduleRepository.findByActiveTrue()).thenReturn(List.of(schedule));
+
+        ArgumentCaptor<Runnable> runnableCaptor = ArgumentCaptor.forClass(Runnable.class);
+        @SuppressWarnings("unchecked")
+        ScheduledFuture<Object> mockFuture = mock(ScheduledFuture.class);
+        doReturn(mockFuture)
+                .when(taskScheduler).schedule(runnableCaptor.capture(), any(CronTrigger.class));
+
+        schedulerService.reloadSchedules();
+        runnableCaptor.getValue().run();
+
+        verify(mqttClientService).publish(
+                "terraGeneral/rain/schedule",
+                "{\"RainState\": 1}",
+                1,
+                false
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // schedule() returns null — task must not be registered
+    // -------------------------------------------------------------------------
+
+    @Test
+    void reloadSchedules_schedulerReturnsNull_taskNotAddedToActiveTasks() {
+        Schedule schedule = buildSchedule(1L, "light", "0 0 8 * * *");
+        when(scheduleRepository.findByActiveTrue()).thenReturn(List.of(schedule));
+        doReturn(null).when(taskScheduler).schedule(any(Runnable.class), any(CronTrigger.class));
+
+        schedulerService.reloadSchedules();
+
+        assertThat(activeTasks()).doesNotContainKey(1L);
+        assertThat(taskFingerprints()).doesNotContainKey(1L);
     }
 }

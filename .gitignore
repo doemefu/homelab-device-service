@@ -86,3 +86,4 @@ replay_pid*
 # Test coverage
 coverage/
 .coverage
+/.opencode/opencode.json

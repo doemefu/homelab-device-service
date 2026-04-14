@@ -1,18 +1,26 @@
 package ch.furchert.homelab.device.controller;
 
+import ch.furchert.homelab.device.config.SecurityConfig;
 import ch.furchert.homelab.device.entity.Device;
 import ch.furchert.homelab.device.service.DeviceService;
 import ch.furchert.homelab.device.service.MqttClientService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -26,6 +34,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * requests carry a mock JWT via {@code SecurityMockMvcRequestPostProcessors.jwt()}.
  */
 @WebMvcTest(DeviceController.class)
+@Import(SecurityConfig.class)
+@TestPropertySource(properties = "DEVICE_SERVICE_CLIENT_SECRET=test")
 class DeviceControllerTest {
 
     @Autowired
@@ -39,6 +49,9 @@ class DeviceControllerTest {
 
     @MockitoBean
     private MqttClientService mqttClientService;
+
+    @MockitoBean
+    private JwtDecoder jwtDecoder;
 
     // -------------------------------------------------------------------------
     // GET /devices
@@ -108,13 +121,7 @@ class DeviceControllerTest {
                         .content(body))
                 .andExpect(status().isOk());
 
-        // Verify MQTT publish was called with the correct topic
-        verify(mqttClientService).publish(
-                eq("terra1/light/man"),
-                eq("{\"LightState\":1}"),
-                eq(1),
-                eq(false)
-        );
+        verify(mqttClientService).publish("terra1/light/man", "{\"LightState\":1}", 1, false);
     }
 
     @Test
@@ -132,11 +139,13 @@ class DeviceControllerTest {
         verifyNoInteractions(mqttClientService);
     }
 
-    @Test
-    void controlDevice_missingField_returns400() throws Exception {
-        // "field" is @NotBlank — omitting it should trigger validation failure
-        String body = "{\"state\":1}";
+    // -------------------------------------------------------------------------
+    // POST /devices/{id}/control — validation (parameterised)
+    // -------------------------------------------------------------------------
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidControlBodies")
+    void controlDevice_invalidBody_returns400(String description, String body) throws Exception {
         mockMvc.perform(post("/devices/1/control")
                         .with(jwt())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -144,15 +153,13 @@ class DeviceControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
-    @Test
-    void controlDevice_missingState_returns400() throws Exception {
-        // "state" is @NotNull — omitting it should trigger validation failure
-        String body = "{\"field\":\"light\"}";
-
-        mockMvc.perform(post("/devices/1/control")
-                        .with(jwt())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isBadRequest());
+    static Stream<Arguments> invalidControlBodies() {
+        return Stream.of(
+                Arguments.of("field missing (@NotBlank)",          "{\"state\":1}"),
+                Arguments.of("state missing (@NotNull)",           "{\"field\":\"light\"}"),
+                Arguments.of("field not matching pattern",         "{\"field\":\"temperature\",\"state\":1}"),
+                Arguments.of("state below @Min(0)",                "{\"field\":\"light\",\"state\":-1}"),
+                Arguments.of("state above @Max(1)",                "{\"field\":\"light\",\"state\":2}")
+        );
     }
 }

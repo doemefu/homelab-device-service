@@ -214,4 +214,54 @@ class MqttMessageParserTest {
             assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
         });
     }
+
+    // -------------------------------------------------------------------------
+    // Missing key — non-sensor message types
+    // -------------------------------------------------------------------------
+
+    @Test
+    void parse_mqttStatus_missingMqttStateKey_returnsUnknown() {
+        ParsedMqttMessage result = parser.parse("terra1/mqtt/status", "{}");
+        assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
+    }
+
+    @Test
+    void parse_lightState_missingLightStateKey_returnsUnknown() {
+        ParsedMqttMessage result = parser.parse("terra1/light", "{}");
+        assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
+    }
+
+    @Test
+    void parse_nightLightState_missingNightLightStateKey_returnsUnknown() {
+        ParsedMqttMessage result = parser.parse("terra1/nightLight", "{}");
+        assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
+    }
+
+    @Test
+    void parse_rainState_missingRainStateKey_returnsUnknown() {
+        ParsedMqttMessage result = parser.parse("terra1/rain", "{}");
+        assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
+    }
+
+    // -------------------------------------------------------------------------
+    // Wrong JSON type — key present but value is a string, not a number
+    // Jackson 3 (tools.jackson): asInt() on a non-numeric TextNode throws rather
+    // than returning 0 as Jackson 2 did. The parser catches the exception and
+    // returns UNKNOWN.
+    // -------------------------------------------------------------------------
+
+    @Test
+    void parse_lightState_stringValueForKey_returnsUnknown() {
+        // In Jackson 3 (tools.jackson), asInt() on a non-numeric TextNode throws rather than
+        // returning 0. The parser catches the exception and returns UNKNOWN.
+        ParsedMqttMessage result = parser.parse("terra1/light", "{\"LightState\":\"on\"}");
+        assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
+    }
+
+    @Test
+    void parse_mqttStatus_stringValueForKey_returnsUnknown() {
+        // In Jackson 3 (tools.jackson), asInt() on a non-numeric TextNode throws.
+        ParsedMqttMessage result = parser.parse("terra1/mqtt/status", "{\"MqttState\":\"on\"}");
+        assertThat(result.type()).isEqualTo(ParsedMqttMessage.MessageType.UNKNOWN);
+    }
 }
