@@ -99,10 +99,11 @@ class MqttClientServiceTest {
 
     @Test
     void connect_brokerConnectException_doesNotPropagate() {
-        try (var _ = Mockito.mockConstruction(MqttClient.class,
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class,
                 (mock, ctx) -> doThrow(new MqttException(MqttException.REASON_CODE_CONNECTION_LOST))
                         .when(mock).connect(any()))) {
             assertThatCode(service::connect).doesNotThrowAnyException();
+            assertThat(mocked.constructed()).hasSize(1);
         }
     }
 

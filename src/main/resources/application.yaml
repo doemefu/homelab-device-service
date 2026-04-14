@@ -32,7 +32,13 @@ spring:
             scope: openid,profile,email
         provider:
           auth-service:
-            issuer-uri: https://auth.furchert.ch
+            # Explicit endpoints avoid an OIDC discovery HTTP call at startup,
+            # so device-service can start independently of auth-service availability.
+            authorization-uri: https://auth.furchert.ch/oauth2/authorize
+            token-uri: https://auth.furchert.ch/oauth2/token
+            jwk-set-uri: https://auth.furchert.ch/oauth2/jwks
+            user-info-uri: https://auth.furchert.ch/userinfo
+            user-name-attribute: sub
 
 server:
   port: 8081
