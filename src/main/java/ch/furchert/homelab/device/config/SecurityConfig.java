@@ -66,7 +66,7 @@ public class SecurityConfig {
     @Order(2)
     public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http) throws Exception {
         http
-            // Explicitly match everything NOT in Chain 1
+            // Catch-all matcher; acts as fallback because it has lower priority (@Order(2)) than Chain 1
             .securityMatcher("/**")
             // Allow WebSocket upgrade handshakes without CSRF token
             .csrf(csrf -> csrf

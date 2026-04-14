@@ -245,8 +245,9 @@ class MqttMessageParserTest {
 
     // -------------------------------------------------------------------------
     // Wrong JSON type — key present but value is a string, not a number
-    // Jackson's asInt() on a non-numeric text node returns 0; message is still
-    // parsed (not rejected), so state is "0". This tests the current contract.
+    // Jackson 3 (tools.jackson): asInt() on a non-numeric TextNode throws rather
+    // than returning 0 as Jackson 2 did. The parser catches the exception and
+    // returns UNKNOWN.
     // -------------------------------------------------------------------------
 
     @Test
