@@ -7,6 +7,26 @@ spring:
     enabled: true
     table: flyway_schema_history_device
 
+  # Override OAuth2 client provider to avoid OIDC discovery HTTP call at startup in tests
+  security:
+    oauth2:
+      client:
+        registration:
+          device-service:
+            provider: auth-service
+            client-id: device-service
+            client-secret: ${DEVICE_SERVICE_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/device-service"
+            scope: openid,profile,email
+        provider:
+          auth-service:
+            authorization-uri: http://localhost/oauth2/authorize
+            token-uri: http://localhost/oauth2/token
+            jwk-set-uri: http://localhost/oauth2/jwks
+            user-info-uri: http://localhost/userinfo
+            user-name-attribute: sub
+
 sentry:
   enabled: false
   dsn:

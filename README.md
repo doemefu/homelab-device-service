@@ -30,8 +30,10 @@ Real-time IoT device management service for the doemefu homelab ecosystem -- MQT
 | POST | `/devices/{id}/control` | JWT | Send control command (publishes to MQTT) |
 | GET | `/actuator/health` | None | K8s liveness/readiness |
 | GET | `/actuator/info` | None | Service info |
-| GET | `/api-docs` | None | OpenAPI JSON spec |
-| GET | `/swagger-ui.html` | None | Swagger UI |
+| GET | `/api-docs` | OIDC login | OpenAPI JSON spec |
+| GET | `/swagger-ui.html` | OIDC login | Swagger UI |
+
+Unauthenticated browser requests to Swagger endpoints are automatically redirected to auth-service login and returned to Swagger after successful sign-in.
 
 ### WebSocket
 
@@ -92,6 +94,7 @@ export DB_USERNAME=homelab
 export DB_PASSWORD=homelab
 export MQTT_PASSWORD=<mqtt-password>
 export INFLUX_TOKEN=<influx-token>
+export DEVICE_SERVICE_CLIENT_SECRET=<oidc-client-secret>
 ```
 
 ### 3. Run
@@ -100,7 +103,7 @@ export INFLUX_TOKEN=<influx-token>
 ./mvnw spring-boot:run
 ```
 
-> The service connects to database `homelabdb` on `localhost:5432`, Mosquitto on `localhost:1883`, and InfluxDB on `localhost:8086` (defaults in `application.yaml`). Auth-service must be reachable at `localhost:8080` for JWKS validation.
+> The service connects to database `homelabdb` on `localhost:5432`, Mosquitto on `localhost:1883`, and InfluxDB on `localhost:8086` (defaults in `application.yaml`). Auth-service must be reachable at `localhost:8080` for JWKS validation and at `https://auth.furchert.ch` for Swagger SSO login.
 
 ---
 
@@ -120,7 +123,8 @@ export INFLUX_TOKEN=<influx-token>
 | `app.influxdb.token` | `INFLUX_TOKEN` | — (required) |
 | `app.influxdb.org` | — | `homelab` |
 | `app.influxdb.bucket` | — | `iot-bucket` |
-| `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` | — | `http://localhost:8080/auth/jwks` |
+| `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` | `JWKS_URI` | `http://localhost:8080/oauth2/jwks` |
+| `spring.security.oauth2.client.registration.device-service.client-secret` | `DEVICE_SERVICE_CLIENT_SECRET` | — (required for Swagger SSO) |
 | `app.scheduler.poll-interval` | — | `60000` ms (1 min) |
 | `spring.flyway.table` | — | `flyway_schema_history_device` |
 
