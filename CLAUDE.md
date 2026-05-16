@@ -20,7 +20,7 @@ Real-time IoT device management service for the homelab IoT ecosystem. Subscribe
 This is 1 of 3 microservices. The most complex service — long-running, stateful (persistent MQTT connections + in-process scheduler). Validates JWTs via auth-service JWKS endpoint. Owns the schedules table and runs cron-based MQTT commands.
 
 **Full architecture spec:** `../../docs/052-architecture-target.md`
-**Implementation plan:** `PLAN.md`
+**Implementation plan:** `docs/PLAN.md`
 
 ## Non-Negotiables
 
@@ -87,4 +87,4 @@ Detailed process rules are in `.claude/rules/` (auto-loaded by Claude Code):
 | `commands.md` | Build, test, cluster access commands |
 | `code-style-conventions.md` | Java/Spring Boot, Lombok, Flyway, secrets |
 | `review-guidelines.md` | Security, diffs, version pinning, tests |
-| `documentation-files.md` | README, OPERATIONS, CONTRIBUTING, DEPLOYMENT |
+| `documentation-files.md` | README, OVERVIEW, INTERFACES, OPERATIONS, DEPLOYMENT, CONTRIBUTING, CHANGELOG, docs |

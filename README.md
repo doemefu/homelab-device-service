@@ -1,200 +1,84 @@
 # homelab-device-service
 
-Real-time IoT device management service for the doemefu homelab ecosystem -- MQTT subscriber, device state persistence, InfluxDB writer, scheduled commands, and WebSocket broadcast.
+**Real-time IoT device management service** for the doemefu homelab ecosystem — MQTT subscriber, device state persistence, InfluxDB writer, scheduled commands, and WebSocket broadcast.
 
 **Port:** 8081 | **Package:** `ch.furchert.homelab.device` | **Database:** PostgreSQL | **External deps:** MQTT (Mosquitto), InfluxDB, auth-service (JWKS)
 
 ---
 
-## Responsibilities
+## Documentation
 
-- MQTT subscriber (all `terra#/#` topics) -- receives sensor data, status, and state changes
-- Device state persistence in PostgreSQL (`devices` table)
-- InfluxDB writer (sensor data on every MQTT message)
-- Scheduled MQTT commands (light, nightlight, rain automation via cron)
-- WebSocket broadcast (STOMP, live device state to frontend)
-- Device control REST endpoint (manual toggle -- publishes MQTT command)
+This repository uses a structured documentation approach. Start here:
 
-**Does NOT:** handle user authentication or user CRUD (auth-service), or query historical InfluxDB data for charts (data-service).
-
----
-
-## API Reference
-
-### REST Endpoints
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/devices` | JWT | List all devices with current state |
-| GET | `/devices/{id}` | JWT | Single device state |
-| POST | `/devices/{id}/control` | JWT | Send control command (publishes to MQTT) |
-| GET | `/actuator/health` | None | K8s liveness/readiness |
-| GET | `/actuator/info` | None | Service info |
-| GET | `/api-docs` | OIDC login | OpenAPI JSON spec |
-| GET | `/swagger-ui.html` | OIDC login | Swagger UI |
-
-Unauthenticated browser requests to Swagger endpoints are automatically redirected to auth-service login and returned to Swagger after successful sign-in.
-
-### WebSocket
-
-STOMP endpoint at `/ws` (no authentication required -- read-only broadcast).
-
-Subscribe to live device state updates:
-
-```
-/topic/terrarium/{deviceName}
-```
-
-Each message contains the full current state of the device after a change.
+| Document | Purpose | When to Read |
+|----------|---------|---------------|
+| **[OVERVIEW.md](./OVERVIEW.md)** | What this service is, responsibilities, features, API/MQTT summary | First — understand the service |
+| **[INTERFACES.md](./INTERFACES.md)** | REST API, WebSocket/STOMP, MQTT contract, JWT validation | When integrating or calling the service |
+| **[OPERATIONS.md](./OPERATIONS.md)** | Runbooks, troubleshooting, MQTT/InfluxDB monitoring | When operating in production |
+| **[DEPLOYMENT.md](./DEPLOYMENT.md)** | K8s deployment, secrets, ingress | When deploying |
+| **[CONTRIBUTING.md](./CONTRIBUTING.md)** | Local dev setup, testing, PR process | When developing locally |
+| **[docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)** | Extended development guide | For detailed development reference |
+| **[docs/INDEX.md](./docs/INDEX.md)** | Full documentation index | To find anything else |
 
 ---
 
-## MQTT Topic Reference
+## Quick Start
 
-### Subscribe (device -> broker, consumed by device-service)
-
-| Topic | Payload | Frequency |
-|-------|---------|-----------|
-| `terra{n}/SHT35/data` | `{"Temperature": 22.5, "Humidity": 65.0}` | Every 30s |
-| `terra{n}/mqtt/status` | `{"MqttState": 1}` | On connect (retained) |
-| `terra{n}/light` | `{"LightState": 1}` | On state change |
-| `terra{n}/nightLight` | `{"NightLightState": 1}` | On state change |
-| `terra{n}/rain` | `{"RainState": 1}` | On state change |
-
-### Publish (device-service -> broker)
-
-| Topic | Payload | Trigger |
-|-------|---------|---------|
-| `terra{n}/{field}/man` | `{"{Field}State": 0\|1}` | Manual control via REST |
-| `terraGeneral/{field}/schedule` | `{"{Field}State": 0\|1}` | Scheduled task (cron) |
-| `javaBackend/mqtt/status` | `{"MqttState": 0\|1}` | Service connect/disconnect (LWT) |
-
----
-
-## Local Development
-
-### Prerequisites
-
-- Java 25
-- Docker (for integration tests)
-- kubectl access to the K3s cluster
-
-### 1. Port-forward cluster services
+### Local Development
 
 ```bash
+# 1. Port-forward cluster services
 kubectl port-forward -n apps svc/postgres 5432:5432
 kubectl port-forward -n apps svc/mosquitto 1883:1883
 kubectl port-forward -n apps svc/influxdb 8086:8086
-```
 
-### 2. Set environment variables
-
-```bash
+# 2. Set environment variables
 export DB_USERNAME=homelab
 export DB_PASSWORD=homelab
 export MQTT_PASSWORD=<mqtt-password>
 export INFLUX_TOKEN=<influx-token>
 export DEVICE_SERVICE_CLIENT_SECRET=<oidc-client-secret>
-```
 
-### 3. Run
-
-```bash
+# 3. Run (auth-service must be reachable at localhost:8080 for JWKS)
 ./mvnw spring-boot:run
 ```
 
-> The service connects to database `homelabdb` on `localhost:5432`, Mosquitto on `localhost:1883`, and InfluxDB on `localhost:8086` (defaults in `application.yaml`). Auth-service must be reachable at `localhost:8080` for JWKS validation and at `https://auth.furchert.ch` for Swagger SSO login.
+Full setup, configuration reference, and testing: see
+[docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md).
+
+### Deploy to Production
+
+Push to `main` — **Flux CD handles everything automatically** (see
+[DEPLOYMENT.md](./DEPLOYMENT.md)).
 
 ---
 
-## Configuration
+## Quick Reference
 
-| Property | Env override | Default |
-|----------|-------------|---------|
-| `spring.datasource.username` | `DB_USERNAME` | `homelab` |
-| `spring.datasource.password` | `DB_PASSWORD` | `homelab` |
-| `app.mqtt.broker-url` | — | `tcp://localhost:1883` |
-| `app.mqtt.client-id` | — | `device-service` |
-| `app.mqtt.username` | `MQTT_USERNAME` | `backend` |
-| `app.mqtt.password` | `MQTT_PASSWORD` | — (required) |
-| `app.mqtt.topics` | — | `terra1/#,terra2/#,terraGeneral/#` |
-| `app.mqtt.qos` | — | `1` |
-| `app.influxdb.url` | — | `http://localhost:8086` |
-| `app.influxdb.token` | `INFLUX_TOKEN` | — (required) |
-| `app.influxdb.org` | — | `homelab` |
-| `app.influxdb.bucket` | — | `iot-bucket` |
-| `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` | `JWKS_URI` | `http://localhost:8080/oauth2/jwks` |
-| `spring.security.oauth2.client.registration.device-service.client-secret` | `DEVICE_SERVICE_CLIENT_SECRET` | — (required for Swagger SSO) |
-| `app.scheduler.poll-interval` | — | `60000` ms (1 min) |
-| `spring.flyway.table` | — | `flyway_schema_history_device` |
+| Interface | Address |
+|-----------|---------|
+| REST API | `https://device.furchert.ch/devices` (JWT) |
+| WebSocket (STOMP) | `wss://device.furchert.ch/ws` → `/topic/terrarium/{deviceName}` |
+| Swagger UI | `https://device.furchert.ch/swagger-ui.html` (OIDC login) |
+| Health | `https://device.furchert.ch/actuator/health` |
+| MQTT (subscribe) | `terra{n}/SHT35/data`, `terra{n}/mqtt/status`, `terra{n}/{light\|nightLight\|rain}` |
+| MQTT (publish) | `terra{n}/{field}/man`, `terraGeneral/{field}/schedule`, `javaBackend/mqtt/status` |
 
----
-
-## Testing
-
-```bash
-./mvnw test          # Unit tests only (no Docker needed)
-./mvnw verify        # Full suite including integration tests (Docker required)
-```
-
-Integration tests use Testcontainers -- Docker must be running. Containers used: PostgreSQL, InfluxDB, and a generic Mosquitto container with anonymous auth.
+Full contracts: [INTERFACES.md](./INTERFACES.md).
 
 ---
 
 ## Architecture
 
-This service is 1 of 3 microservices in the homelab IoT stack.
-
 ```
-                          ┌─────────────────┐
-                          │  auth-service    │
-                          │  (port 8080)     │
-                          └───────┬─────────┘
-                          JWKS    │    JWKS
-                       ┌──────────┴──────────┐
-                       v                     v
-              ┌─────────────────┐   ┌─────────────────┐
-  MQTT <----> │ device-service  │   │  data-service    │
-  InfluxDB <--│ (port 8081)     │   │  (port 8082)     │
-              │ owns: devices,  │   │                  │
-              │   schedules     │   │                  │
-              └─────────────────┘   └──────────────────┘
+auth-service (JWKS) ──> device-service (this repo, port 8081) <──> Mosquitto (MQTT)
+                                  │                              └──> InfluxDB
+                                  └──> PostgreSQL (devices, schedules)
+                                  └──> STOMP /ws broadcast ──> frontend
 ```
 
-- **auth-service** -- issues JWTs, exposes JWKS endpoint
-- **device-service** (this repo) -- validates JWTs via JWKS, manages real-time device state, writes to InfluxDB, publishes/subscribes MQTT
-- **data-service** -- serves historical InfluxDB queries to consuming services
-
-**Key design:** This is a long-running, stateful service. It maintains persistent MQTT connections and in-process scheduled tasks. Restarting briefly disconnects from MQTT but reconnects automatically (Eclipse Paho auto-reconnect + LWT).
-
----
-
-## K8s Deployment
-
-Manifests are in `k8s/`:
-- `k8s/deployment.yaml` — Deployment + ClusterIP Service in namespace `apps`; image tag managed by Flux CD (do not edit the tag manually)
-- `k8s/kustomization.yaml` — Kustomize base consumed by Flux
-
-Required Secrets must exist in namespace `apps` before the first deploy (see `DEPLOYMENT.md`):
-- `device-service-secrets`
-- `sentry-dsn` — must contain the Sentry DSN under key `dsn`
-
-**Deployments are automated via Flux CD.** Push to `main` — CI builds a new `main-YYYYMMDDTHHmmss` image, Flux detects it within 5 min, commits the updated tag to this repo, and the cluster rolls out the new pod automatically. No manual `kubectl` steps needed.
-
----
-
-## CI/CD
-
-GitHub Actions workflow at `.github/workflows/build.yml`:
-
-- **test** job: runs `./mvnw verify` on every push and PR to `main`
-- **build-and-push** job: builds a multi-arch image (`linux/amd64` + `linux/arm64`) and pushes to `ghcr.io/doemefu/homelab-device-service` — runs only on push to `main` after tests pass
-
-Two image tags are pushed per build:
-- `<git-sha>` — content-addressable, retained for debugging
-- `main-YYYYMMDDTHHmmss` — timestamp tag used by Flux CD for automatic deployment
-
-The `latest` tag is not pushed. Flux CD selects the newest `main-*` tag via `ImagePolicy` and updates `k8s/deployment.yaml` automatically.
+1 of 3 microservices. Long-running and stateful (persistent MQTT connection +
+in-process scheduler). See [OVERVIEW.md](./OVERVIEW.md) for the full picture.
 
 ---
 
@@ -202,8 +86,13 @@ The `latest` tag is not pushed. Flux CD selects the newest `main-*` tag via `Ima
 
 | Repo | Description |
 |------|-------------|
-| [homelab](https://github.com/doemefu/homelab) | Infrastructure-as-Code -- Ansible, K3s cluster, platform services (PostgreSQL, InfluxDB, Mosquitto) |
-| [homelab-auth-service](https://github.com/doemefu/homelab-auth-service) | JWT authentication -- user CRUD, token issuance, JWKS endpoint |
-| homelab-data-service | Historical data queries (InfluxDB) for consuming services (not yet created) |
+| [homelab](https://github.com/doemefu/homelab) | Infrastructure-as-Code — Ansible, K3s cluster, platform services |
+| [homelab-auth-service](https://github.com/doemefu/homelab-auth-service) | JWT authentication — user CRUD, token issuance, JWKS endpoint |
+| homelab-data-service | Historical data queries (InfluxDB) — not yet created |
 
-Full architecture docs (migration plan, current/target architecture, cross-service contracts): [homelab/docs/](https://github.com/doemefu/homelab/tree/main/docs)
+---
+
+## Support
+
+- **Issues:** GitHub Issues
+- **Status:** See [CHANGELOG.md](./CHANGELOG.md) for recent changes
