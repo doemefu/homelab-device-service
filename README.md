@@ -66,7 +66,9 @@ username, and the MQTT topic prefix. Response `201`:
 }
 ```
 
-`clientSecret` is returned **exactly once** (never persisted by
+`createdAt` is the **auth-service client** creation timestamp (from the admin
+API), distinct from the device row's own DB `created_at` column added by
+Flyway V3. `clientSecret` is returned **exactly once** (never persisted by
 device-service, never logged). Flash it onto the device. `DELETE
 /devices/{name}` deletes the row and revokes the auth-service client
 (idempotent; `404` if the device is unknown).
@@ -139,6 +141,8 @@ export DB_PASSWORD=homelab
 export MQTT_PASSWORD=<mqtt-password>
 export INFLUX_TOKEN=<influx-token>
 export DEVICE_SERVICE_CLIENT_SECRET=<oidc-client-secret>
+# Only to test POST/DELETE /devices locally (default is a cluster DNS name):
+export AUTH_SERVICE_BASE_URL=http://localhost:8080
 ```
 
 ### 3. Run
@@ -169,7 +173,8 @@ export DEVICE_SERVICE_CLIENT_SECRET=<oidc-client-secret>
 | `app.influxdb.bucket` | — | `iot-bucket` |
 | `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` | `JWKS_URI` | `http://localhost:8080/oauth2/jwks` |
 | `spring.security.oauth2.resourceserver.jwt.issuer-uri` | `JWT_ISSUER` | `https://auth.furchert.ch` |
-| `spring.security.oauth2.client.registration.device-service.client-secret` | `DEVICE_SERVICE_CLIENT_SECRET` | — (required for Swagger SSO) |
+| `spring.security.oauth2.client.registration.device-service.client-secret` | `DEVICE_SERVICE_CLIENT_SECRET` | — (required for Swagger SSO and device registration) |
+| `app.auth-service.base-url` | `AUTH_SERVICE_BASE_URL` | `http://auth-service.apps.svc.cluster.local:8080` |
 | `app.websocket.allowed-origins` | `APP_WEBSOCKET_ALLOWED_ORIGINS` | `https://furchert.ch` |
 | `app.websocket.require-auth` | `APP_WEBSOCKET_REQUIRE_AUTH` | `true` |
 | `app.scheduler.poll-interval` | — | `60000` ms (1 min) |
