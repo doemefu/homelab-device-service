@@ -180,7 +180,15 @@ Common causes: database unreachable, migration checksum mismatch.
    `ROLE_ADMIN`). Confirm the user is an admin in auth-service.
 2. `409 Conflict` — the device name already exists locally **or** auth-service
    already has that `clientId`. Pick another name or `DELETE /devices/{name}`
-   first.
+   first. **Orphaned-client dead-end:** if you get `409` but `GET /devices`
+   shows no such device, an earlier compensation failed and left an
+   auth-service client with no local row. `DELETE /devices/{name}` returns
+   `404` (no local row to delete) and does **not** clear it — reconcile
+   directly via the auth-service admin API, then re-register:
+   ```bash
+   # cluster-internal; needs an ADMIN token or clients:admin scope
+   curl -X DELETE http://auth-service.apps.svc.cluster.local:8080/api/v1/clients/<name>
+   ```
 3. `5xx` with a compensation log line:
    ```bash
    kubectl logs -n apps deployment/device-service | grep -iE "compensat|orphaned auth-service client"

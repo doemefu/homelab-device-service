@@ -29,11 +29,14 @@ export DB_PASSWORD=homelab
 export MQTT_PASSWORD=<mosquitto-backend-password>
 export INFLUX_TOKEN=<influxdb-admin-token>
 export DEVICE_SERVICE_CLIENT_SECRET=<oidc-client-secret>
+# Only needed to exercise POST/DELETE /devices locally — the default points
+# at the cluster-internal DNS name, unreachable from a laptop:
+export AUTH_SERVICE_BASE_URL=http://localhost:8080
 ./mvnw spring-boot:run
 ```
 
 The service connects to database `homelabdb` on `localhost:5432`, Mosquitto on `localhost:1883`, and InfluxDB on `localhost:8086` (defaults in `application.yaml`).
-Auth-service must be reachable for JWT JWKS validation (`http://localhost:8080/oauth2/jwks`) and for Swagger SSO login (`https://auth.furchert.ch`).
+Auth-service must be reachable for JWT JWKS validation (`http://localhost:8080/oauth2/jwks`) and for Swagger SSO login (`https://auth.furchert.ch`). The device-registration endpoints (`POST`/`DELETE /devices`) additionally call the auth-service **admin API** (`/api/v1/clients`) server-to-server via `AUTH_SERVICE_BASE_URL`, so auth-service must also be reachable as a resource API to test registration locally (port-forward: `kubectl port-forward -n apps svc/auth-service 8080:8080`).
 
 ---
 
@@ -58,6 +61,7 @@ Auth-service must be reachable for JWT JWKS validation (`http://localhost:8080/o
 |----------|------|-------------|
 | `src/test/.../service/` | Unit tests (Mockito) | None |
 | `src/test/.../controller/` | MockMvc slice tests (`@WebMvcTest`) | None |
+| `src/test/.../client/` | WireMock HTTP + OAuth2 tests (`@WireMockTest`) — `wiremock-spring-boot:4.2.1` | None (no Docker) |
 | `src/test/.../integration/` | Integration tests (Testcontainers) | Docker |
 
 `AbstractIntegrationTest` provides shared containers (PostgreSQL, Mosquitto, InfluxDB) for all integration tests via `@DynamicPropertySource`.
@@ -69,7 +73,7 @@ Auth-service must be reachable for JWT JWKS validation (`http://localhost:8080/o
 - **Jackson 3** uses group ID `tools.jackson` (not `com.fasterxml.jackson`) — affects MQTT JSON message parsing
 - **`@WebMvcTest`** support moved to the `spring-boot-webmvc-test` artifact
 - **`@AutoConfigureMockMvc`** must be added explicitly for MockMvc in `@SpringBootTest`
-- **Timestamps** — the `Device` entity uses `java.time.LocalDateTime` (mapped to PostgreSQL `TIMESTAMP`)
+- **Timestamps** — `Device.lastSeen` is `java.time.LocalDateTime` (PostgreSQL `TIMESTAMP`); `Device.createdAt` is `java.time.Instant` (PostgreSQL `TIMESTAMP WITH TIME ZONE`, defaulted in-entity so the MQTT auto-create path satisfies NOT NULL)
 
 ---
 
@@ -79,8 +83,10 @@ All schema changes go through Flyway. Migration files are in `src/main/resources
 
 Current migrations:
 - **V1** — Initial schema: `devices` table + seed data (terra1, terra2)
+- **V2** — `schedules` table
+- **V3** — device-registration metadata on `devices` (`type`, `description`, `created_at`, `provisioned`)
 
-New migrations should follow `V2__description.sql`.
+New migrations should follow `V4__description.sql`.
 
 Never edit or delete an existing migration file — Flyway checksums will fail on next startup.
 

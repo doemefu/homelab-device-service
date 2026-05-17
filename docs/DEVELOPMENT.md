@@ -72,7 +72,11 @@ kubectl port-forward -n apps svc/influxdb 8086:8086    # InfluxDB
 ```
 
 auth-service must also be reachable at `localhost:8080` for JWKS validation,
-and at `https://auth.furchert.ch` for Swagger SSO login.
+and at `https://auth.furchert.ch` for Swagger SSO login. To exercise the
+device-registration endpoints (`POST`/`DELETE /devices`), auth-service must
+additionally be reachable as a resource API for its admin client lifecycle
+(`/api/v1/clients`) via `AUTH_SERVICE_BASE_URL` (set it to
+`http://localhost:8080` locally; the default is the cluster DNS name).
 
 ### 2. Set environment variables
 
@@ -113,7 +117,8 @@ The service connects to database `homelabdb` on `localhost:5432`, Mosquitto on
 | `app.influxdb.org` | — | `homelab` |
 | `app.influxdb.bucket` | — | `iot-bucket` |
 | `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` | `JWKS_URI` | `http://localhost:8080/oauth2/jwks` |
-| `spring.security.oauth2.client.registration.device-service.client-secret` | `DEVICE_SERVICE_CLIENT_SECRET` | — (required for Swagger SSO) |
+| `spring.security.oauth2.client.registration.device-service[-admin].client-secret` | `DEVICE_SERVICE_CLIENT_SECRET` | — (required; Swagger SSO **and** the `device-service-admin` `client_credentials` registration) |
+| `app.auth-service.base-url` | `AUTH_SERVICE_BASE_URL` | `http://auth-service.apps.svc.cluster.local:8080` (auth-service admin API for device registration) |
 | `app.scheduler.poll-interval` | — | `60000` ms (1 min) |
 | `spring.flyway.table` | — | `flyway_schema_history_device` |
 

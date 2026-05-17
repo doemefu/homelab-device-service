@@ -65,11 +65,6 @@ public class SecurityConfig {
     }
 
     /**
-     * Chain 2 (order 2): stateless resource server for REST API, WebSocket, actuator.
-     * Behaviour is identical to the previous single-chain configuration.
-     * This chain handles all requests NOT matched by Chain 1.
-     */
-    /**
      * Maps the auth-service {@code role} claim (an <em>unprefixed</em> string,
      * e.g. {@code "ADMIN"} — see auth-service {@code INTERFACES.md} §1) to a
      * {@code ROLE_<value>} authority so {@code hasRole("ADMIN")} works.
@@ -92,6 +87,12 @@ public class SecurityConfig {
         return converter;
     }
 
+    /**
+     * Chain 2 (order 2): stateless resource server for REST API, WebSocket, actuator.
+     * Behaviour is identical to the previous single-chain configuration, plus
+     * ADMIN-only authorization for the device registration endpoints.
+     * This chain handles all requests NOT matched by Chain 1.
+     */
     @Bean
     @Order(2)
     public SecurityFilterChain apiSecurityFilterChain(

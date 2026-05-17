@@ -38,8 +38,11 @@ export DB_PASSWORD=homelab
 export MQTT_PASSWORD=<mqtt-password>
 export INFLUX_TOKEN=<influx-token>
 export DEVICE_SERVICE_CLIENT_SECRET=<oidc-client-secret>
+# Only to test POST/DELETE /devices locally (default is a cluster DNS name):
+export AUTH_SERVICE_BASE_URL=http://localhost:8080
 
-# 3. Run (auth-service must be reachable at localhost:8080 for JWKS)
+# 3. Run (auth-service must be reachable at localhost:8080 for JWKS; also for
+#    the admin API /api/v1/clients if testing device registration)
 ./mvnw spring-boot:run
 ```
 
@@ -57,7 +60,7 @@ Push to `main` — **Flux CD handles everything automatically** (see
 
 | Interface | Address |
 |-----------|---------|
-| REST API | `https://device.furchert.ch/devices` (JWT) |
+| REST API | `https://device.furchert.ch/devices` (JWT; `POST`/`DELETE /devices` require `ROLE_ADMIN`) |
 | WebSocket (STOMP) | `wss://device.furchert.ch/ws` → `/topic/terrarium/{deviceName}` |
 | Swagger UI | `https://device.furchert.ch/swagger-ui.html` (OIDC login) |
 | Health | `https://device.furchert.ch/actuator/health` |

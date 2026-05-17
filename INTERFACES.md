@@ -82,7 +82,9 @@ username, and the MQTT topic prefix. Response `201`:
 }
 ```
 
-`clientSecret` is returned **exactly once** (never persisted by
+`createdAt` is the **auth-service client** creation timestamp (from the admin
+API), distinct from the device row's own DB `created_at` column added by
+Flyway V3. `clientSecret` is returned **exactly once** (never persisted by
 device-service, never logged). Flash it onto the device. `DELETE
 /devices/{name}` deletes the row and revokes the auth-service client
 (idempotent; `404` if the device is unknown).
