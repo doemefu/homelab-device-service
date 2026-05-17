@@ -117,7 +117,8 @@ All secrets are sourced from the `device-service-secrets` Kubernetes Secret (see
 | `INFLUX_ORG` | Env / ConfigMap | InfluxDB organisation (default: `homelab`) |
 | `INFLUX_BUCKET` | Env / ConfigMap | InfluxDB bucket for sensor data (default: `iot-bucket`) |
 | `JWKS_URI` | Env / ConfigMap | Auth-service JWKS endpoint (default: `http://auth-service.apps.svc.cluster.local:8080/oauth2/jwks`) |
-| `DEVICE_SERVICE_CLIENT_SECRET` | Secret `device-service-secrets` / key `device-service-client-secret` | OIDC client secret for Swagger SSO login |
+| `AUTH_SERVICE_BASE_URL` | Env / ConfigMap | Auth-service base URL for the admin client API used by device registration (default: `http://auth-service.apps.svc.cluster.local:8080`) |
+| `DEVICE_SERVICE_CLIENT_SECRET` | Secret `device-service-secrets` / key `device-service-client-secret` | OAuth2 client secret — reused for Swagger SSO login **and** the `device-service-admin` `client_credentials` registration that calls the auth-service admin API |
 
 ---
 
@@ -172,6 +173,27 @@ Common causes: database unreachable, migration checksum mismatch.
    ```bash
    kubectl describe deployment device-service -n apps | grep JWKS_URI
    ```
+
+### Device registration (`POST /devices`) fails
+
+1. `403 Forbidden` — the caller's JWT lacks `role: ADMIN` (mapped to
+   `ROLE_ADMIN`). Confirm the user is an admin in auth-service.
+2. `409 Conflict` — the device name already exists locally **or** auth-service
+   already has that `clientId`. Pick another name or `DELETE /devices/{name}`
+   first.
+3. `5xx` with a compensation log line:
+   ```bash
+   kubectl logs -n apps deployment/device-service | grep -iE "compensat|orphaned auth-service client"
+   ```
+   `COMPENSATION FAILED — orphaned auth-service client` means an auth-service
+   client exists with no local row. Reconcile manually via the auth-service
+   admin API (`DELETE /api/v1/clients/{clientId}`).
+4. Token/connectivity errors calling auth-service: verify `AUTH_SERVICE_BASE_URL`
+   and that the `device-service` client has the `client_credentials` grant +
+   `clients:admin` scope in auth-service (auth-service `INTERFACES.md` §8).
+5. A device deleted locally but still able to obtain tokens: deletion revokes
+   the client immediately, but already-issued device JWTs stay valid until
+   their `exp` (≤1 h) — this is expected (auth-service `INTERFACES.md` §8).
 
 ### Swagger login redirect loop / OAuth2 login fails
 

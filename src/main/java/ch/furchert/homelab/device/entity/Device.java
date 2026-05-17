@@ -3,6 +3,7 @@ package ch.furchert.homelab.device.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 /**
@@ -54,4 +55,28 @@ public class Device {
     /** Timestamp of the last MQTT message received from this device. */
     @Column(name = "last_seen")
     private LocalDateTime lastSeen;
+
+    /** Device type, e.g. "terrarium". Set when registered via the admin API. */
+    @Column(length = 50)
+    private String type;
+
+    /** Free-text description. Set when registered via the admin API. */
+    @Column(length = 200)
+    private String description;
+
+    /**
+     * Row creation timestamp. Defaulted here so the MQTT auto-create path
+     * (builder without {@code createdAt}) also satisfies the NOT NULL column.
+     */
+    @Builder.Default
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt = Instant.now();
+
+    /**
+     * {@code true} when the device was created via the admin POST /devices
+     * API; auto-created (first-MQTT-message) rows stay {@code false}.
+     */
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean provisioned = false;
 }

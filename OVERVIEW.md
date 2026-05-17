@@ -79,6 +79,8 @@ Testament). In-process scheduled tasks resume on startup.
 |--------|------|------|-------------|
 | GET | `/devices` | JWT | List all devices with current state |
 | GET | `/devices/{id}` | JWT | Single device state |
+| POST | `/devices` | JWT, ADMIN | Register device + provision its auth-service OAuth2 client |
+| DELETE | `/devices/{name}` | JWT, ADMIN | Delete device + revoke its OAuth2 client |
 | POST | `/devices/{id}/control` | JWT | Send control command (publishes to MQTT) |
 | GET | `/actuator/health` | None | K8s liveness/readiness |
 | GET | `/actuator/info` | None | Service info |

@@ -2,6 +2,7 @@ package ch.furchert.homelab.device.controller;
 
 import ch.furchert.homelab.device.config.SecurityConfig;
 import ch.furchert.homelab.device.entity.Device;
+import ch.furchert.homelab.device.service.DeviceRegistrationService;
 import ch.furchert.homelab.device.service.DeviceService;
 import ch.furchert.homelab.device.service.MqttClientService;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,9 @@ class DeviceControllerTest {
 
     @MockitoBean
     private DeviceService deviceService;
+
+    @MockitoBean
+    private DeviceRegistrationService deviceRegistrationService;
 
     @MockitoBean
     private MqttClientService mqttClientService;

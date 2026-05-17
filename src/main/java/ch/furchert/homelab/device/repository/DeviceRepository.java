@@ -20,4 +20,12 @@ public interface DeviceRepository extends JpaRepository<Device, Long> {
      * @return the matching device, or empty if not found
      */
     Optional<Device> findByName(String name);
+
+    /**
+     * Checks whether a device with the given name already exists.
+     *
+     * @param name the device name
+     * @return {@code true} if a row with this name exists
+     */
+    boolean existsByName(String name);
 }

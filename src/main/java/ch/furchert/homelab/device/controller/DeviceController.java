@@ -1,13 +1,17 @@
 package ch.furchert.homelab.device.controller;
 
 import ch.furchert.homelab.device.dto.ControlCommandDto;
+import ch.furchert.homelab.device.dto.DeviceRegisteredResponse;
 import ch.furchert.homelab.device.dto.DeviceStateDto;
+import ch.furchert.homelab.device.dto.RegisterDeviceRequest;
 import ch.furchert.homelab.device.entity.Device;
+import ch.furchert.homelab.device.service.DeviceRegistrationService;
 import ch.furchert.homelab.device.service.DeviceService;
 import ch.furchert.homelab.device.service.MqttClientService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import tools.jackson.databind.ObjectMapper;
@@ -28,8 +32,42 @@ import java.util.Optional;
 public class DeviceController {
 
     private final DeviceService deviceService;
+    private final DeviceRegistrationService deviceRegistrationService;
     private final MqttClientService mqttClientService;
     private final ObjectMapper objectMapper;
+
+    /**
+     * Registers a new device: provisions an OAuth2 client in auth-service and
+     * persists the device row. Returns the one-time plaintext client secret.
+     *
+     * <p>Requires {@code ROLE_ADMIN} (enforced by {@code SecurityConfig}).
+     *
+     * @param req the device registration request
+     * @return 201 with device metadata + one-time {@code clientSecret}
+     */
+    @PostMapping
+    public ResponseEntity<DeviceRegisteredResponse> registerDevice(
+            @Valid @RequestBody RegisterDeviceRequest req) {
+        // Do not log the request/response — the response carries a one-time secret.
+        DeviceRegisteredResponse resp = deviceRegistrationService.register(req);
+        log.info("Registered device '{}'", resp.name());
+        return ResponseEntity.status(HttpStatus.CREATED).body(resp);
+    }
+
+    /**
+     * Deletes a device and revokes its auth-service OAuth2 client.
+     *
+     * <p>Requires {@code ROLE_ADMIN} (enforced by {@code SecurityConfig}).
+     *
+     * @param name the canonical device name
+     * @return 204 on success, 404 when the device does not exist
+     */
+    @DeleteMapping("/{name}")
+    public ResponseEntity<Void> deleteDevice(@PathVariable String name) {
+        deviceRegistrationService.delete(name);
+        log.info("Deleted device '{}'", name);
+        return ResponseEntity.noContent().build();
+    }
 
     /**
      * Returns the current state of every known device.

@@ -40,6 +40,8 @@ auth-service:
 |--------|------|------|-------------|
 | GET | `/devices` | JWT | List all devices with current state |
 | GET | `/devices/{id}` | JWT | Single device state, or `404` |
+| POST | `/devices` | JWT, `ROLE_ADMIN` | Register a device + provision its OAuth2 client (see below) |
+| DELETE | `/devices/{name}` | JWT, `ROLE_ADMIN` | Delete a device + revoke its OAuth2 client → `204` |
 | POST | `/devices/{id}/control` | JWT | Send a control command (publishes to MQTT) |
 | GET | `/actuator/health` | None | Liveness/readiness — `{"status":"UP"}` |
 | GET | `/actuator/info` | None | Service metadata |
@@ -50,6 +52,43 @@ Unauthenticated **browser** requests to the Swagger endpoints are redirected
 to auth-service OIDC login and returned to Swagger after successful sign-in
 (this is the OAuth2 *client* flow, distinct from the resource-server flow used
 by the `/devices` API).
+
+### Device Registration (`POST /devices`)
+
+Admin-only. Provisions an OAuth2 `client_credentials` client in auth-service
+(`POST /api/v1/clients`, auth-service `INTERFACES.md` §8) **first**, then
+persists the device row; a local failure compensates by deleting the
+auth-service client.
+
+Request body:
+
+```json
+{ "name": "terra3", "type": "terrarium", "description": "Greenhouse 3" }
+```
+
+`name` is canonical: `[a-z0-9-]{3,32}`, equals the OAuth2 `clientId`, the MQTT
+username, and the MQTT topic prefix. Response `201`:
+
+```json
+{
+  "name": "terra3",
+  "type": "terrarium",
+  "clientId": "terra3",
+  "clientSecret": "<one-time-plaintext>",
+  "scopes": ["mqtt:pub", "mqtt:sub"],
+  "createdAt": "2026-05-16T10:00:00Z",
+  "mqttUsername": "terra3",
+  "mqttTopicsAllowed": ["terra3/#", "terraGeneral/#"]
+}
+```
+
+`clientSecret` is returned **exactly once** (never persisted by
+device-service, never logged). Flash it onto the device. `DELETE
+/devices/{name}` deletes the row and revokes the auth-service client
+(idempotent; `404` if the device is unknown).
+
+The `role` claim from auth-service JWTs is mapped to `ROLE_<value>` for these
+admin checks.
 
 ### Control Request
 

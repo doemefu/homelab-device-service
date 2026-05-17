@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Added
+- Device registration: `POST /devices` (ADMIN) provisions an auth-service
+  OAuth2 `client_credentials` client then persists the device (compensating
+  on local failure) and returns the one-time `clientSecret`;
+  `DELETE /devices/{name}` (ADMIN) removes both. New Flyway `V3` adds
+  `type`, `description`, `created_at`, `provisioned` to `devices`. Adds a
+  `device-service-admin` `client_credentials` OAuth2 registration and a
+  `role` → `ROLE_*` JWT authorities mapping.
 - Initial implementation of homelab-device-service
 - MQTT client (Eclipse Paho 1.2.5) with auto-reconnect and LWT
 - MQTT message parser for all topic patterns (sensor data, device status, light/nightlight/rain state)

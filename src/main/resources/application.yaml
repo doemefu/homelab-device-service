@@ -30,6 +30,15 @@ spring:
             authorization-grant-type: authorization_code
             redirect-uri: "{baseUrl}/login/oauth2/code/device-service"
             scope: openid,profile,email
+          # Service-to-service registration for the auth-service admin API.
+          # Reuses the same client-id/secret; a separate registration is
+          # required because a ClientRegistration has exactly one grant type.
+          device-service-admin:
+            provider: auth-service
+            client-id: device-service
+            client-secret: ${DEVICE_SERVICE_CLIENT_SECRET}
+            authorization-grant-type: client_credentials
+            scope: clients:admin
         provider:
           auth-service:
             # Explicit endpoints avoid an OIDC discovery HTTP call at startup,
@@ -44,6 +53,9 @@ server:
   port: 8081
 
 app:
+  auth-service:
+    base-url: ${AUTH_SERVICE_BASE_URL:http://auth-service.apps.svc.cluster.local:8080}
+
   mqtt:
     broker-url: ${MQTT_BROKER_URL:tcp://localhost:1883}
     client-id: ${MQTT_CLIENT_ID:device-service}
