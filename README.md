@@ -28,12 +28,48 @@ Real-time IoT device management service for the doemefu homelab ecosystem -- MQT
 | GET | `/devices` | JWT | List all devices with current state |
 | GET | `/devices/{id}` | JWT | Single device state |
 | POST | `/devices/{id}/control` | JWT, role `ADMIN` (403 otherwise) | Send control command (publishes to MQTT) |
+| POST | `/devices` | JWT, role `ADMIN` | Register a device and provision its OAuth2 client (see below) → `201` |
+| DELETE | `/devices/{name}` | JWT, role `ADMIN` | Delete a device and revoke its OAuth2 client → `204` |
 | GET | `/actuator/health` | None | K8s liveness/readiness |
 | GET | `/actuator/info` | None | Service info |
 | GET | `/api-docs` | OIDC login | OpenAPI JSON spec |
 | GET | `/swagger-ui.html` | OIDC login | Swagger UI |
 
 JWT means an auth-service access token: valid signature (JWKS), `iss` = `https://auth.furchert.ch`, not expired, no `typ: at+jwt`, and no ID token (tokens with an `azp` claim are rejected). Reads accept any such token; every other method under `/devices/**` needs the `role` claim `ADMIN`, which auth-service puts only into tokens of signed-in users (client_credentials tokens carry no role). Audience (`aud`) is not checked yet (doemefu/homelab-auth-service#101, #81).
+
+### Device registration (`POST /devices`)
+
+Admin-only. Provisions an OAuth2 `client_credentials` client in auth-service
+(`POST /api/v1/clients`, auth-service `INTERFACES.md` §8) **first**, then
+persists the device row; a local failure compensates by deleting the
+auth-service client.
+
+Request body:
+
+```json
+{ "name": "terra3", "type": "terrarium", "description": "Greenhouse 3" }
+```
+
+`name` is canonical: `[a-z0-9-]{3,32}`, equals the OAuth2 `clientId`, the MQTT
+username, and the MQTT topic prefix. Response `201`:
+
+```json
+{
+  "name": "terra3",
+  "type": "terrarium",
+  "clientId": "terra3",
+  "clientSecret": "<one-time-plaintext>",
+  "scopes": ["mqtt:pub", "mqtt:sub"],
+  "createdAt": "2026-05-16T10:00:00Z",
+  "mqttUsername": "terra3",
+  "mqttTopicsAllowed": ["terra3/#", "terraGeneral/#"]
+}
+```
+
+`clientSecret` is returned **exactly once** (never persisted by
+device-service, never logged). Flash it onto the device. `DELETE
+/devices/{name}` deletes the row and revokes the auth-service client
+(idempotent; `404` if the device is unknown).
 
 Unauthenticated browser requests to Swagger endpoints are automatically redirected to auth-service login and returned to Swagger after successful sign-in.
 
