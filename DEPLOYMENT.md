@@ -44,7 +44,9 @@ The `image:` line in `k8s/deployment.yaml` carries a `$imagepolicy` marker — F
 - `livenessProbe` / `readinessProbe`: same health endpoint, `periodSeconds: 10` / `5`, `failureThreshold: 3`.
 - Resources: `limits.cpu: 1000m`, `requests.cpu: 100m`, `limits.memory: 512Mi`, `requests.memory: 256Mi`.
 
-A pod that never reaches Ready and terminates with exit 143 (SIGTERM) roughly 5 min after start has exceeded this budget — check node CPU contention before raising it again. Exit 137 (SIGKILL) is ambiguous: it follows a SIGTERM that was not honoured within `terminationGracePeriodSeconds`, but it is also what an OOM kill produces — check `kubectl describe pod` (Reason `OOMKilled` vs. the failed-startup-probe event) before assuming a startup timeout.
+A pod that never reaches Ready and terminates with exit 143 (SIGTERM) roughly 5 min after start has exceeded this budget — check node CPU contention before raising it again.
+
+Exit 137 (SIGKILL) is more ambiguous: it can be caused by an unhonoured SIGTERM (the process did not exit within `terminationGracePeriodSeconds`) or by an OOM kill, which sends SIGKILL directly without a prior SIGTERM. Check `kubectl describe pod <pod-name>` (Reason `OOMKilled` vs. the failed-startup-probe event) before assuming a startup timeout.
 
 ### Required Kubernetes Secret
 
