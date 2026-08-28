@@ -64,11 +64,12 @@ spec:
                   optional: true
             - name: SENTRY_ENVIRONMENT
               value: "production"
+          # 60 x 5 s = 300 s startup budget: Spring Boot start takes 65-95 s at 1 CPU on mba1 and >150 s at 0.5 CPU on the 4-core node; keep >= 2x margin (see #60).
           startupProbe:
             httpGet:
               path: /actuator/health
               port: 8081
-            failureThreshold: 30
+            failureThreshold: 60
             periodSeconds: 5
           livenessProbe:
             httpGet:
@@ -88,7 +89,7 @@ spec:
               cpu: "100m"
             limits:
               memory: "512Mi"
-              cpu: "500m"
+              cpu: "1000m"
 ---
 apiVersion: v1
 kind: Service

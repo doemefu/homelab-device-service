@@ -17,3 +17,6 @@
 - Unit tests: MqttMessageParser, DeviceService, InfluxWriterService, SchedulerService, DeviceController
 - Integration tests: MQTT (Mosquitto container), InfluxDB writer, full flow
 - OpenAPI / Swagger UI documentation
+
+### Fixed
+- k8s: raise CPU limit to 1 CPU and startupProbe budget to 300 s — pods scheduled on the 4-core node exceeded the 150 s startup budget under the 500m quota and crash-looped for days (#60).

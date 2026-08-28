@@ -38,6 +38,14 @@ k8s/kustomization.yaml — Kustomize base consumed by Flux
 
 The `image:` line in `k8s/deployment.yaml` carries a `$imagepolicy` marker — Flux rewrites it on each automated update. Do not remove the marker comment.
 
+### Health checks
+
+- `startupProbe`: `GET /actuator/health` on port 8081, `failureThreshold: 60` x `periodSeconds: 5` = 300 s budget. JVM startup takes ~94 s at 1 CPU on the fastest node and can exceed 150 s under CPU contention on the 4-core node — the budget keeps >=2x margin (#60).
+- `livenessProbe` / `readinessProbe`: same health endpoint, `periodSeconds: 10` / `5`, `failureThreshold: 3`.
+- Resources: `limits.cpu: 1000m`, `requests.cpu: 100m`, `limits.memory: 512Mi`, `requests.memory: 256Mi`.
+
+A pod that never reaches Ready and shows exit 137/143 after ~5 min means startup exceeded this budget — check node CPU contention before raising it again.
+
 ### Required Kubernetes Secret
 
 Create `device-service-secrets` before the first deployment:
