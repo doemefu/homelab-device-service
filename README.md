@@ -143,7 +143,7 @@ Integration tests use Testcontainers -- Docker must be running. Containers used:
 
 ## Architecture
 
-This service is 1 of 3 microservices in the homelab IoT stack.
+One of the homelab services: auth-service (OIDC IdP, JWKS), device-service (this repo), furchert-ch (web frontend + admin dashboard) are deployed; data-service is planned only.
 
 ```
                           ┌─────────────────┐
