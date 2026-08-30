@@ -82,7 +82,7 @@ Each message contains the full current state of the device after a change.
 ### 1. Port-forward cluster services
 
 ```bash
-kubectl port-forward -n apps svc/postgres 5432:5432
+kubectl port-forward -n apps svc/postgresql 5432:5432
 kubectl port-forward -n apps svc/mosquitto 1883:1883
 kubectl port-forward -n apps svc/influxdb 8086:8086
 ```
@@ -143,7 +143,7 @@ Integration tests use Testcontainers -- Docker must be running. Containers used:
 
 ## Architecture
 
-This service is 1 of 3 microservices in the homelab IoT stack.
+One of the homelab services: auth-service (OIDC IdP, JWKS), device-service (this repo), furchert-ch (web frontend + admin dashboard) are deployed; data-service is planned only.
 
 ```
                           ┌─────────────────┐

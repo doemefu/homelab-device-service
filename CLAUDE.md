@@ -2,6 +2,8 @@
 
 > **Session start:** Read `.claude/memory/MEMORY.md` completely. The topmost entry shows the current state. If there is an entry with `status: in_progress`, read the linked worklog and ask the user: *"I see we were interrupted at [SLUG]. Continue?"* — before doing anything else.
 
+`.claude/` is fully gitignored in this repo — memory, worklogs, agents and rules exist only on this machine; cross-check `git log`/GitHub when they look stale.
+
 > **After each completed change:** Insert a new block **at the top** of `.claude/memory/MEMORY.md`. The file grows top-down — newest entries always visible first.
 
 ## Service Overview
@@ -17,9 +19,9 @@ Real-time IoT device management service for the homelab IoT ecosystem. Subscribe
 
 ## Architecture Context
 
-This is 1 of 3 microservices. The most complex service — long-running, stateful (persistent MQTT connections + in-process scheduler). Validates JWTs via auth-service JWKS endpoint. Owns the schedules table and runs cron-based MQTT commands.
+Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the JWTs this service validates via JWKS), furchert-ch (Next.js site whose `/dashboard` consumes this service's REST API server-side), and data-service (planned only — not yet deployed). The most complex service — long-running, stateful (persistent MQTT connections + in-process scheduler). Owns the schedules table and runs cron-based MQTT commands.
 
-**Full architecture spec:** `../../docs/052-architecture-target.md`
+**Full architecture spec:** `../docs/052-architecture-target.md`
 **Implementation plan:** `PLAN.md`
 
 ## Non-Negotiables
@@ -32,19 +34,22 @@ This is 1 of 3 microservices. The most complex service — long-running, statefu
 - Do **not** introduce new dependencies without explicit user approval
 - All comments and documentation in **English**
 - Minimize diff size: no drive-by refactors
+- Commit, push and open PRs on feature branches without asking (standing permission, 2026-08-28). Merging, force-pushes, playbook runs, cluster mutations and anything touching SOPS/secrets need an explicit go for that task.
+- Before any merge, wait for the Copilot review and fix or answer every comment.
 
 ## Tech Stack (pinned)
 
 | Component | Version |
 |-----------|---------|
 | Java | 25 |
-| Spring Boot | 4.0.5 |
+| Spring Boot | 4.1.1 |
 | Eclipse Paho MQTT | 1.2.5 |
-| influxdb-client-java | 7.2.0 |
-| springdoc-openapi | 2.7.0 |
-| Testcontainers BOM | 1.20.4 |
+| influxdb-client-java | 8.0.0 |
+| springdoc-openapi | 3.1.0 |
+| Testcontainers | 1.21.4 (core `testcontainers` artifact: 2.0.5) |
+| Base image | `eclipse-temurin:25-jre-alpine` |
 
-## Spring Boot 4.0 Notes
+## Spring Boot 4.x Notes
 
 - Flyway via `spring-boot-starter-flyway` + `flyway-database-postgresql` (required since Flyway 10)
 - Jackson 3 (`tools.jackson` group ID) — affects MQTT JSON parsing
@@ -77,7 +82,7 @@ This is 1 of 3 microservices. The most complex service — long-running, statefu
 
 ## Process & Conventions
 
-Detailed process rules are in `.claude/rules/` (auto-loaded by Claude Code):
+Detailed process rules are in `.claude/rules/` (auto-loaded by Claude Code; local-only in this repo, see the note above):
 
 | Rule file | Covers |
 |-----------|--------|
@@ -88,3 +93,4 @@ Detailed process rules are in `.claude/rules/` (auto-loaded by Claude Code):
 | `code-style-conventions.md` | Java/Spring Boot, Lombok, Flyway, secrets |
 | `review-guidelines.md` | Security, diffs, version pinning, tests |
 | `documentation-files.md` | README, OPERATIONS, CONTRIBUTING, DEPLOYMENT |
+| `github-project.md` | GitHub Project #5 status transitions |
