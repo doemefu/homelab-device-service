@@ -84,7 +84,7 @@ Each message contains the full current state of the device after a change.
 ```bash
 kubectl port-forward -n apps svc/postgresql 5432:5432
 kubectl port-forward -n apps svc/mosquitto 1883:1883
-kubectl port-forward -n apps svc/influxdb 8086:8086
+kubectl port-forward -n apps svc/influxdb2 8086:80
 ```
 
 ### 2. Set environment variables
