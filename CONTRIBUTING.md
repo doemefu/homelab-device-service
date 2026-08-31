@@ -18,7 +18,7 @@
 ```bash
 kubectl port-forward -n apps svc/postgres 5432:5432 &
 kubectl port-forward -n apps svc/mosquitto 1883:1883 &
-kubectl port-forward -n apps svc/influxdb2 8086:8086 &
+kubectl port-forward -n apps svc/influxdb2 8086:80 &
 ```
 
 ### 2. Set environment variables and run
