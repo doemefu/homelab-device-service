@@ -113,7 +113,7 @@ All secrets are sourced from the `device-service-secrets` Kubernetes Secret (see
 | `INFLUX_TOKEN` | Secret `device-service-secrets` / key `influx-token` | InfluxDB admin token |
 | `MQTT_BROKER_URL` | Env / ConfigMap | Mosquitto broker URL (default: `tcp://mosquitto.apps.svc.cluster.local:1883`) |
 | `MQTT_USERNAME` | Env / ConfigMap | Mosquitto username (default: `backend`) |
-| `INFLUX_URL` | Env / ConfigMap | InfluxDB HTTP endpoint (default: `http://influxdb.apps.svc.cluster.local:8086`) |
+| `INFLUX_URL` | Env / ConfigMap | InfluxDB HTTP endpoint (default: `http://influxdb2.apps.svc.cluster.local:80`) |
 | `INFLUX_ORG` | Env / ConfigMap | InfluxDB organisation (default: `homelab`) |
 | `INFLUX_BUCKET` | Env / ConfigMap | InfluxDB bucket for sensor data (default: `iot-bucket`) |
 | `JWKS_URI` | Env / ConfigMap | Auth-service JWKS endpoint (default: `http://auth-service.apps.svc.cluster.local:8080/oauth2/jwks`) |
