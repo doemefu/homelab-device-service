@@ -169,19 +169,22 @@ storageClassName: local-path
 
 Resource limits are required for all workloads in the `apps` namespace (CLAUDE.md non-negotiable).
 
-Baseline template for ARM64 Pi hardware:
+`device-service`'s deployed values, kept in sync with `k8s/deployment.yaml`:
 
 ```yaml
 resources:
   requests:
-    cpu: 50m
-    memory: 64Mi
-  limits:
-    cpu: 500m
+    cpu: 100m
     memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
 ```
 
-Adjust based on actual workload. Check `kubectl top pods -n apps` after deploy.
+The 1 CPU limit is what keeps JVM startup inside the 300 s `startupProbe` budget — a
+tighter quota caused a chronic startup crash-loop on the 4-core node (#60, see
+[Health checks](#health-checks)). A smaller non-JVM app should start well below this
+and be sized from `kubectl top pods -n apps` after deploy.
 
 ---
 
@@ -279,7 +282,7 @@ Working examples are in `examples/`. Copy and adapt for your app.
 All examples use:
 - Namespace `apps`
 - Multi-arch images
-- Resource limits per the baseline above
+- Resource limits set explicitly (see [Resource Limits](#resource-limits))
 - No hardcoded secrets (comments show where SOPS-backed values belong)
 
 ---
