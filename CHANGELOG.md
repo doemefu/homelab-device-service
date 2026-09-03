@@ -16,6 +16,7 @@
 - Spring Boot 4.0.5 / Java 25 / Spring Security 7
 - Unit tests: MqttMessageParser, DeviceService, InfluxWriterService, SchedulerService, DeviceController
 - Integration tests: MQTT (Mosquitto container), InfluxDB writer, full flow
+- Integration tests: WebSocket/STOMP — real client connection against a running server, per-device destination routing, and the MQTT-to-WebSocket broadcast chain (#39)
 - OpenAPI / Swagger UI documentation
 
 ### Fixed
