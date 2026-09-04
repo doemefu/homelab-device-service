@@ -17,6 +17,7 @@
 - Unit tests: MqttMessageParser, DeviceService, InfluxWriterService, SchedulerService, DeviceController
 - Integration tests: MQTT (Mosquitto container), InfluxDB writer, full flow
 - Integration tests: WebSocket/STOMP — real client connection against a running server, per-device destination routing, and the MQTT-to-WebSocket broadcast chain (#39)
+- Integration tests: scheduler — cron tasks driven from real `schedules` rows against the real `ThreadPoolTaskScheduler` and Mosquitto, covering registration, cancellation on deactivate and delete, payload-change re-registration, and invalid-cron skip (#40)
 - OpenAPI / Swagger UI documentation
 
 ### Fixed
