@@ -11,7 +11,9 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +31,7 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -59,6 +62,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * test class in the JVM and no test resets it. {@code MqttIntegrationTest} owns
  * {@code terra1} for its database assertions; this class asserts only on the STOMP
  * payload, and its end-to-end test uses {@code terra2} with values no other test writes.
+ * Both rows are seeded by {@code V1__create_devices.sql}, so concurrent contexts consuming
+ * the same MQTT message only ever UPDATE an existing row -- they cannot race the
+ * {@code devices.name} UNIQUE constraint.
+ *
+ * <p>Cross-class caveat: the end-to-end test publishes on {@code terra2/SHT35/data}, and
+ * every cached context is subscribed to {@code terra2/#}. {@code InfluxWriterIntegrationTest}
+ * asserts that no InfluxDB record exists for {@code device=terra2}, and unlike this class it
+ * does not mock {@code InfluxWriterService}. That assertion is safe only because a context
+ * consumes MQTT solely while it is alive, and its context is built when its own class starts
+ * -- after this class has finished publishing. Reordering the classes so that
+ * {@code InfluxWriterIntegrationTest} is live during this publish would break it; see the
+ * follow-ups on PR #72.
  *
  * <h2>Why there are no sleeps</h2>
  * A STOMP {@code SUBSCRIBE} frame is written asynchronously, so a broadcast issued
@@ -90,7 +105,8 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
     @LocalServerPort
     int port;
 
-    private WebSocketStompClient stompClient;
+    private static WebSocketStompClient stompClient;
+
     private StompSession session;
     private MqttClient testPublisher;
 
@@ -100,13 +116,31 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
      */
     private final AtomicReference<Throwable> sessionFailure = new AtomicReference<>();
 
-    @BeforeEach
-    void connectStompClient() throws Exception {
+    /**
+     * One STOMP client for the whole class.
+     *
+     * <p>{@link StandardWebSocketClient} does not implement {@code Lifecycle}, so
+     * {@link WebSocketStompClient#stop()} does not release the JSR-356 container that
+     * Tomcat creates per instance. Building a client per test method would therefore
+     * leak one {@code AsynchronousChannelGroup} and its threads per method.
+     */
+    @BeforeAll
+    static void startStompClient() {
         stompClient = new WebSocketStompClient(new StandardWebSocketClient());
         stompClient.setMessageConverter(new JacksonJsonMessageConverter());
         // No TaskScheduler is configured, so heartbeats must be off.
         stompClient.setDefaultHeartbeat(new long[] {0, 0});
+    }
 
+    @AfterAll
+    static void stopStompClient() {
+        if (stompClient != null) {
+            stompClient.stop();
+        }
+    }
+
+    @BeforeEach
+    void connectStompClient() throws Exception {
         StompSessionHandlerAdapter handler = new StompSessionHandlerAdapter() {
             @Override
             public void handleException(StompSession session, StompCommand command,
@@ -127,22 +161,26 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
 
     @AfterEach
     void disconnectAll() throws MqttException {
-        // Checked before disconnecting, since a clean disconnect itself reports a transport error.
-        assertThat(sessionFailure.get())
-                .as("no STOMP transport or payload-handling error during the test")
-                .isNull();
-
-        if (session != null && session.isConnected()) {
-            session.disconnect();
-        }
-        if (stompClient != null) {
-            stompClient.stop();
-        }
-        if (testPublisher != null) {
-            if (testPublisher.isConnected()) {
-                testPublisher.disconnect();
+        // Snapshot before disconnecting, since a clean disconnect itself reports a transport
+        // error. The assertion runs in the finally block so that a failure here can never skip
+        // the cleanup below -- otherwise one bad test would leave a live session and a connected
+        // publisher behind, and the next test's publisher would be kicked off the broker for
+        // reusing the client id.
+        Throwable failure = sessionFailure.get();
+        try {
+            if (session != null && session.isConnected()) {
+                session.disconnect();
             }
-            testPublisher.close();
+            if (testPublisher != null) {
+                if (testPublisher.isConnected()) {
+                    testPublisher.disconnect();
+                }
+                testPublisher.close();
+            }
+        } finally {
+            assertThat(failure)
+                    .as("no STOMP transport or payload-handling error during the test")
+                    .isNull();
         }
     }
 
@@ -190,14 +228,23 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
         return received;
     }
 
-    private MqttClient connectTestPublisher() throws MqttException {
+    /**
+     * Connects the short-lived publisher used by the end-to-end test.
+     *
+     * <p>Deliberately without {@code MqttCallbackExtended}, automatic reconnect or an LWT:
+     * those are conventions for {@code MqttClientService}'s long-lived production connection.
+     * This client exists for the duration of one test method and is closed in
+     * {@code @AfterEach}; an LWT would additionally publish an unrelated message into the
+     * shared broker when it disconnects. Same shape as {@code MqttIntegrationTest}.
+     */
+    private void connectTestPublisher() throws MqttException {
         String brokerUrl = "tcp://" + mosquitto.getHost() + ":" + mosquitto.getMappedPort(1883);
-        MqttClient client = new MqttClient(brokerUrl, "ws-it-test-publisher", new MemoryPersistence());
+        // Assigned before connect() so @AfterEach can still close the client if connect fails.
+        testPublisher = new MqttClient(brokerUrl, "ws-it-test-publisher", new MemoryPersistence());
         MqttConnectOptions opts = new MqttConnectOptions();
         opts.setCleanSession(true);
         opts.setConnectionTimeout(5);
-        client.connect(opts);
-        return client;
+        testPublisher.connect(opts);
     }
 
     // ------------------------------------------------------------------
@@ -278,8 +325,17 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
         assertThat(second.name()).isEqualTo("terra2");
         assertThat(second.temperature()).isEqualTo(22.2);
 
-        assertThat(terra1.poll()).as("no cross-talk into the terra1 destination").isNull();
-        assertThat(terra2.poll()).as("no cross-talk into the terra2 destination").isNull();
+        // Both queues must stay empty for a whole settling window, not merely at the instant
+        // after the expected frames arrived. WebSocketConfig does not set preservePublishOrder,
+        // so brokerChannel and clientOutboundChannel are executor-backed and the two
+        // destinations travel independent thread-pool hops: a mis-routed frame can still be in
+        // flight when the correctly-routed one has already been delivered. A zero-width poll()
+        // here would report "no cross-talk" for exactly the defect this test exists to catch.
+        Awaitility.await()
+                .alias("no cross-talk between the terra1 and terra2 destinations")
+                .during(500, TimeUnit.MILLISECONDS)
+                .atMost(AWAIT_SECONDS, TimeUnit.SECONDS)
+                .until(() -> terra1.isEmpty() && terra2.isEmpty());
     }
 
     /**
@@ -293,16 +349,32 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
     void mqttSensorMessage_reachesWebSocketSubscriber() throws Exception {
         BlockingQueue<DeviceStateDto> received = subscribeAndAwaitActive("terra2");
 
-        testPublisher = connectTestPublisher();
-        MqttMessage message = new MqttMessage("{\"Temperature\": 27.7, \"Humidity\": 41.3}".getBytes());
-        message.setQos(1);
-        message.setRetained(false);
-        testPublisher.publish("terra2/SHT35/data", message);
+        connectTestPublisher();
+
+        // Publish until the broadcast comes back, rather than publishing once and hoping the
+        // application's own MQTT subscription is live. That client connects with
+        // cleanSession=true and automatic reconnect, so while it sits in a reconnect backoff
+        // the broker holds no session state for it and silently drops a QoS-1 publish -- the
+        // broker still PUBACKs, so publish() returns normally and the message is simply lost.
+        // Duplicate publishes are harmless: they carry the same values and land in a queue that
+        // dies with this test's STOMP session.
+        Awaitility.await()
+                .alias("MQTT sensor message broadcast to the WebSocket subscriber")
+                .atMost(AWAIT_SECONDS, TimeUnit.SECONDS)
+                .pollInterval(500, TimeUnit.MILLISECONDS)
+                .until(() -> {
+                    MqttMessage message = new MqttMessage(
+                            "{\"Temperature\": 27.7, \"Humidity\": 41.3}".getBytes(StandardCharsets.UTF_8));
+                    message.setQos(1);
+                    message.setRetained(false);
+                    testPublisher.publish("terra2/SHT35/data", message);
+                    return !received.isEmpty();
+                });
 
         // DeviceService is @Transactional and broadcasts inside the transaction, so the
         // frame can arrive before the row is committed. Asserting on the STOMP payload
         // rather than on a repository read keeps this independent of commit timing.
-        DeviceStateDto dto = received.poll(AWAIT_SECONDS, TimeUnit.SECONDS);
+        DeviceStateDto dto = received.poll();
         assertThat(dto).as("MQTT sensor message broadcast to the WebSocket subscriber").isNotNull();
         assertThat(dto.name()).isEqualTo("terra2");
         assertThat(dto.temperature()).isEqualTo(27.7);
