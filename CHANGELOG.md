@@ -18,6 +18,7 @@
 - Integration tests: MQTT (Mosquitto container), InfluxDB writer, full flow
 - Integration tests: WebSocket/STOMP — real client connection against a running server, per-device destination routing, and the MQTT-to-WebSocket broadcast chain (#39)
 - Integration tests: scheduler — cron tasks driven from real `schedules` rows against the real `ThreadPoolTaskScheduler` and Mosquitto, covering registration, cancellation on deactivate and delete, payload-change re-registration, and invalid-cron skip (#40)
+- Security regression test: access tokens with header `typ: at+jwt` get 401 on `GET /devices` and `POST /devices/{id}/control`, verified against the auto-configured JWT decoder with a test-served JWKS (gate G5 of doemefu/homelab#168, #88)
 - OpenAPI / Swagger UI documentation
 
 ### Security
