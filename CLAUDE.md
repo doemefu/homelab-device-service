@@ -34,8 +34,8 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 - Do **not** introduce new dependencies without explicit user approval
 - All comments and documentation in **English**
 - Minimize diff size: no drive-by refactors
-- Commit, push and open PRs on feature branches without asking (standing permission, 2026-08-28). Merging, force-pushes, playbook runs, cluster mutations and anything touching SOPS/secrets need an explicit go for that task.
-- Before any merge, wait for the Copilot review and fix or answer every comment.
+- Commit, push and open PRs on feature branches without asking. Merging PRs is always the user's. Rolling out changes the user has already merged needs no extra go; force-pushes, playbook runs and other cluster mutations need an explicit go. SOPS files are never read or edited by Claude — the user edits them.
+- Before any merge, wait for the Copilot review (CodeRabbit via `@coderabbitai review` if Copilot is out of quota) and fix or answer every comment.
 
 ## Tech Stack (pinned)
 
@@ -60,7 +60,7 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 
 - Flyway for `devices` + `schedules` tables (`spring.flyway.table=flyway_schema_history_device`)
 - `spring.jpa.hibernate.ddl-auto=validate`
-- Package structure: `config/`, `controller/`, `dto/`, `entity/`, `repository/`, `service/`, `security/`, `exception/`
+- Package structure: `config/`, `controller/`, `dto/`, `entity/`, `repository/`, `service/`, `exception/`
 - OAuth2 Resource Server for JWT validation
 - MQTT: Eclipse Paho with `MqttCallbackExtended`, auto-reconnect, LWT
 - Scheduler: `ThreadPoolTaskScheduler` + `ConcurrentHashMap` for task tracking
