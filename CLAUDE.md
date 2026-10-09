@@ -19,7 +19,7 @@ Real-time IoT device management service for the homelab IoT ecosystem. Subscribe
 
 ## Architecture Context
 
-Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the JWTs this service validates via JWKS), furchert-ch (Next.js site whose `/dashboard` consumes this service's REST API server-side), and data-service (planned only — not yet deployed). The most complex service — long-running, stateful (persistent MQTT connections + in-process scheduler). Owns the schedules table and runs cron-based MQTT commands.
+Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the JWTs this service validates via JWKS), furchert-ch (Next.js site whose `/dashboard` consumes this service's REST API server-side), and data-service (analytical data plane, deployed; no direct interaction with this service). The most complex service — long-running, stateful (persistent MQTT connections + in-process scheduler). Owns the schedules table and runs cron-based MQTT commands.
 
 **Full architecture spec:** `../docs/052-architecture-target.md`
 **Implementation plan:** `PLAN.md`
@@ -45,7 +45,7 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 | Spring Boot | 4.1.1 |
 | Eclipse Paho MQTT | 1.2.5 |
 | influxdb-client-java | 8.0.0 |
-| springdoc-openapi | 3.1.0 |
+| springdoc-openapi | 3.1.1 |
 | Testcontainers | 1.21.4 (core `testcontainers` artifact: 2.0.5) |
 | Base image | `eclipse-temurin:25-jre-alpine` |
 
@@ -55,7 +55,6 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 - Jackson 3 (`tools.jackson` group ID) — affects MQTT JSON parsing
 - `@SpringBootTest` needs explicit `@AutoConfigureMockMvc` for MockMvc
 - Spring Security 7.0, OAuth2 Resource Server
-- WebSocket+Jackson bug fixed in 4.0.5 (`#49749`)
 
 ## Service-Specific Conventions
 
