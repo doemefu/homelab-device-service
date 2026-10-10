@@ -22,6 +22,8 @@ Real-time IoT device management service for the homelab IoT ecosystem. Subscribe
 Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the JWTs this service validates via JWKS), furchert-ch (Next.js site whose `/dashboard` consumes this service's REST API server-side), and data-service (analytical data plane, deployed; no direct interaction with this service). The most complex service — long-running, stateful (persistent MQTT connections + in-process scheduler). Owns the schedules table and runs cron-based MQTT commands.
 
 **Full architecture spec:** `../docs/052-architecture-target.md`
+**Schedules ownership:** `../docs/adr/0001-schedules-ownership-and-data-plane.md`
+**MQTT device auth (draft):** `../infrastructure/docs/053-mqtt-device-authentication.md`
 **Implementation plan:** `PLAN.md`
 
 ## Non-Negotiables
