@@ -19,9 +19,11 @@ Real-time IoT device management service for the homelab IoT ecosystem. Subscribe
 
 ## Architecture Context
 
-Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the JWTs this service validates via JWKS), furchert-ch (Next.js site whose `/dashboard` consumes this service's REST API server-side), and data-service (planned only — not yet deployed). The most complex service — long-running, stateful (persistent MQTT connections + in-process scheduler). Owns the schedules table and runs cron-based MQTT commands.
+Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the JWTs this service validates via JWKS), furchert-ch (Next.js site whose `/dashboard` consumes this service's REST API server-side), and data-service (analytical data plane, deployed; no direct interaction with this service). The most complex service — long-running, stateful (persistent MQTT connections + in-process scheduler). Owns the schedules table and runs cron-based MQTT commands.
 
 **Full architecture spec:** `../docs/052-architecture-target.md`
+**Schedules ownership:** `../docs/adr/0001-schedules-ownership-and-data-plane.md`
+**MQTT device auth (draft):** `../infrastructure/docs/053-mqtt-device-authentication.md`
 **Implementation plan:** `PLAN.md`
 
 ## Non-Negotiables
@@ -34,8 +36,8 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 - Do **not** introduce new dependencies without explicit user approval
 - All comments and documentation in **English**
 - Minimize diff size: no drive-by refactors
-- Commit, push and open PRs on feature branches without asking (standing permission, 2026-08-28). Merging, force-pushes, playbook runs, cluster mutations and anything touching SOPS/secrets need an explicit go for that task.
-- Before any merge, wait for the Copilot review and fix or answer every comment.
+- Commit, push and open PRs on feature branches without asking. Merging PRs is always the user's. Rolling out changes the user has already merged needs no extra go; force-pushes, playbook runs and other cluster mutations need an explicit go. SOPS files are never read or edited by Claude — the user edits them.
+- Before any merge, wait for the Copilot review (CodeRabbit via `@coderabbitai review` if Copilot is out of quota) and fix or answer every comment.
 
 ## Tech Stack (pinned)
 
@@ -45,7 +47,7 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 | Spring Boot | 4.1.1 |
 | Eclipse Paho MQTT | 1.2.5 |
 | influxdb-client-java | 8.0.0 |
-| springdoc-openapi | 3.1.0 |
+| springdoc-openapi | 3.1.1 |
 | Testcontainers | 1.21.4 (core `testcontainers` artifact: 2.0.5) |
 | Base image | `eclipse-temurin:25-jre-alpine` |
 
@@ -55,13 +57,12 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 - Jackson 3 (`tools.jackson` group ID) — affects MQTT JSON parsing
 - `@SpringBootTest` needs explicit `@AutoConfigureMockMvc` for MockMvc
 - Spring Security 7.0, OAuth2 Resource Server
-- WebSocket+Jackson bug fixed in 4.0.5 (`#49749`)
 
 ## Service-Specific Conventions
 
 - Flyway for `devices` + `schedules` tables (`spring.flyway.table=flyway_schema_history_device`)
 - `spring.jpa.hibernate.ddl-auto=validate`
-- Package structure: `config/`, `controller/`, `dto/`, `entity/`, `repository/`, `service/`, `security/`, `exception/`
+- Package structure: `config/`, `controller/`, `dto/`, `entity/`, `repository/`, `service/`, `exception/`
 - OAuth2 Resource Server for JWT validation
 - MQTT: Eclipse Paho with `MqttCallbackExtended`, auto-reconnect, LWT
 - Scheduler: `ThreadPoolTaskScheduler` + `ConcurrentHashMap` for task tracking
