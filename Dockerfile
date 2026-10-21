@@ -1,5 +1,7 @@
+# Base images are pinned by multi-arch index digest (linux/amd64 + linux/arm64); Dependabot's
+# docker ecosystem bumps tag and digest together. Digests resolved 2026-10-21 (Temurin 25.0.4.1+1).
 # Stage 1: build
-FROM eclipse-temurin:25-jdk-alpine AS builder
+FROM eclipse-temurin:25-jdk-alpine@sha256:3fd2d245c4e0eba615fe366a71b8bd25f5db7104f53e4026b24bf508b880bd2a AS builder
 WORKDIR /app
 
 COPY mvnw .
@@ -11,7 +13,7 @@ COPY src src
 RUN ./mvnw clean package -DskipTests -q
 
 # Stage 2: runtime
-FROM eclipse-temurin:25-jre-alpine
+FROM eclipse-temurin:25-jre-alpine@sha256:3c0a9084927a221ccd1d007fcaf614465672c0af37aaa834c5184483afe56d61
 WORKDIR /app
 
 # TEMPORARY workaround for the eMudhra intermediate-CA compromise
