@@ -123,6 +123,18 @@ All secrets are sourced from the `device-service-secrets` Kubernetes Secret (see
 
 ## Troubleshooting
 
+### Temporary trust-store workaround (emSign roots)
+
+The runtime image deletes the emSign ECC Root CA – G3, emSign Root CA – C1 and emSign ECC Root CA – C3 entries from the Temurin JRE cacerts (eMudhra compromise, https://blog.cloudflare.com/emudhra-certificate-compromise; tracking doemefu/homelab#212). The build fails if any of their SHA-256 fingerprints remain.
+
+Verify in the running pod (expected output `0`; `changeit` is the JDK's public default store password, not a secret):
+
+```bash
+kubectl -n apps exec deploy/device-service -- sh -c 'keytool -list -cacerts -storepass changeit | grep -ciE "emsign_ecc_root_ca__g3|emsign_root_ca__c1|emsign_ecc_root_ca__c3"'
+```
+
+Removal: once Temurin ships cacerts from NSS >= 3.131.1 (adoptium/temurin-build#4587), take the Dependabot docker digest bump, delete the `RUN` step including its comment from the `Dockerfile`, and tick the Temurin item in doemefu/homelab#212.
+
 ### Service fails to start — Flyway migration error
 
 ```bash
