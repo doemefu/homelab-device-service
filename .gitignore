@@ -45,7 +45,11 @@ docs/superpowers/
 ### Environment ###
 .env
 *.pem
-/.claude/
+/.claude/*
+!/.claude/settings.json
+!/.claude/agent-context.md
+!/.claude/rules/
+.claude/**/.DS_Store
 
 # Build & Cache
 *.class
