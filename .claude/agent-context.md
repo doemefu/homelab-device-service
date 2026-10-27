@@ -5,7 +5,7 @@ Repo-specific facts for the `homelab-workflow` agents. Each agent reads only its
 ## architect
 
 - Stack: Java 25 / Spring Boot 4.1 / Spring Security 7 (OAuth2 Resource Server).
-- Contract document: `README.md` ("API Reference", "MQTT Topic Reference": REST, WebSocket/STOMP, MQTT topics and payloads). There is no `INTERFACES.md` yet; create one only if a change needs a dedicated contract file. Cross-repo changes: spec goes into `../docs/` per `../.claude/rules/cross-repo-tasks.md`; this repo only summarises and links.
+- Contract document: `README.md` ("API Reference", "MQTT Topic Reference": REST, WebSocket/STOMP, MQTT topics and payloads). There is no `INTERFACES.md` yet; create one only if a change needs a dedicated contract file. Cross-repo changes: spec goes into `../docs/` per `/homelab-workflow:cross-repo`; this repo only summarises and links.
 - Read before writing: `CLAUDE.md`, `README.md`, `PLAN.md`, the touched code under `src/main/java/ch/furchert/homelab/device/` (`config/`, `controller/`, `service/`, `dto/`), and `../auth-service/INTERFACES.md` when JWT claims or JWKS consumption are touched.
 - Contract scope for this service:
   - WebSocket/STOMP destination `/topic/terrarium/{name}` and its payload.
