@@ -40,7 +40,7 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 | Component | Version |
 |-----------|---------|
 | Java | 25 |
-| Spring Boot | 4.1.1 |
+| Spring Boot | 4.1.2 |
 | Eclipse Paho MQTT | 1.2.5 |
 | influxdb-client-java | 8.0.0 |
 | springdoc-openapi | 3.1.1 |

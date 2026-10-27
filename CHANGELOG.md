@@ -22,6 +22,7 @@
 - OpenAPI / Swagger UI documentation
 
 ### Security
+- Spring Boot 4.1.1 → 4.1.2: Jackson 2.21.7 / 3.1.7 resolve GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89, GHSA-cxp5-3px4-pw24, GHSA-wv8q-qhhj-9h54, GHSA-q4xh-88c3-wmh7, GHSA-gx83-3vf8-gh7j and GHSA-wjgm-6hv5-3cvf in `jackson-core` / `jackson-databind`; the BOM now manages Tomcat 11.0.27, so the 11.0.25 override is removed; PostgreSQL JDBC 42.7.13 → 42.7.14 (#102).
 - TEMPORARY: the runtime image removes the emSign ECC Root CA – G3, emSign Root CA – C1 and emSign ECC Root CA – C3 entries from the JRE cacerts and the build fails if their fingerprints are still present (#94, #95; doemefu/homelab#212). Remove once Temurin ships cacerts from NSS ≥ 3.131.1.
 - Temurin base images pinned by digest (#96, #97).
 - Pin embedded Tomcat to 11.0.25, overriding the 11.0.24 managed by the Spring Boot 4.1.1 BOM — resolves three critical advisories (GHSA-9xv2-5v5q-p794, GHSA-gcx9-497g-6cp6, GHSA-h3x4-894j-xpx5) in `tomcat-embed-core` (#74).
