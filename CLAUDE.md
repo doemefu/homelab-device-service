@@ -1,10 +1,6 @@
 # CLAUDE.md — homelab-device-service
 
-> **Session start:** Read `.claude/memory/MEMORY.md` completely. The topmost entry shows the current state. If there is an entry with `status: in_progress`, read the linked worklog and ask the user: *"I see we were interrupted at [SLUG]. Continue?"* — before doing anything else.
-
-`.claude/` is fully gitignored in this repo — memory, worklogs, agents and rules exist only on this machine; cross-check `git log`/GitHub when they look stale.
-
-> **After each completed change:** Insert a new block **at the top** of `.claude/memory/MEMORY.md`. The file grows top-down — newest entries always visible first.
+In-progress worklogs are listed at session start by the `homelab-workflow` plugin; start work with `/homelab-workflow:start-task`. Durable facts go to auto memory.
 
 ## Service Overview
 
@@ -37,7 +33,7 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 - All comments and documentation in **English**
 - Minimize diff size: no drive-by refactors
 - Commit, push and open PRs on feature branches without asking. Merging PRs is always the user's. Rolling out changes the user has already merged needs no extra go; force-pushes, playbook runs and other cluster mutations need an explicit go. SOPS files are never read or edited by Claude — the user edits them.
-- Before any merge, wait for the Copilot review (CodeRabbit via `@coderabbitai review` if Copilot is out of quota) and fix or answer every comment.
+- Before any merge, wait for the Copilot review (CodeRabbit via `@coderabbitai review` if Copilot is out of quota) and fix or answer every comment (`/homelab-workflow:review-gate`).
 
 ## Tech Stack (pinned)
 
@@ -81,17 +77,35 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 
 ---
 
+## Commands
+
+```bash
+./mvnw clean package              # Build
+./mvnw clean package -DskipTests  # Build, skip tests
+./mvnw spring-boot:run            # Run locally (cluster via port-forward)
+./mvnw test                       # All tests
+./mvnw test -Dtest=ClassName      # Single test class
+./mvnw verify                     # Full build + tests
+docker build -t device-service .  # Docker image
+```
+
+Cluster access for local dev:
+```bash
+kubectl port-forward -n apps svc/postgresql 5432:5432  # service is `postgresql`, not `postgres`
+kubectl port-forward -n apps svc/influxdb2 8086:80     # service port 80 -> container 8086
+kubectl port-forward -n apps svc/mosquitto 1883:1883
+```
+auth-service must be reachable for JWT validation (`JWKS_URI`, default `http://localhost:8080/oauth2/jwks`). This service owns and migrates `devices` and `schedules` (`flyway_schema_history_device`); data-service owns only `netmon`.
+
 ## Process & Conventions
 
-Detailed process rules are in `.claude/rules/` (auto-loaded by Claude Code; local-only in this repo, see the note above):
+Workflow, worklogs, plan structure, GitHub Project board, review gate and cross-repo tasks come from the `homelab-workflow` plugin (`/homelab-workflow:workflow`, `:start-task`, `:project-board`, `:review-gate`, `:cross-repo`).
+
+Agents are the plugin's `homelab-workflow:<role>` (architect, implementer, reviewer, documenter, devops, plan-reviewer, doc-auditor). Repo specifics for each role are in `.claude/agent-context.md`. There are no repo-only agents.
+
+Repo rules in `.claude/rules/` (auto-loaded by Claude Code, scoped by `paths:`):
 
 | Rule file | Covers |
 |-----------|--------|
-| `workflow.md` | 6-phase milestone workflow |
-| `worklog-conventions.md` | Worklog location, naming, header, structure |
-| `plan-structure.md` | 8-section plan template |
-| `commands.md` | Build, test, cluster access commands |
 | `code-style-conventions.md` | Java/Spring Boot, Lombok, Flyway, secrets |
-| `review-guidelines.md` | Security, diffs, version pinning, tests |
-| `documentation-files.md` | README, OPERATIONS, CONTRIBUTING, DEPLOYMENT |
-| `github-project.md` | GitHub Project #5 status transitions |
+| `documentation-files.md` | README, OPERATIONS, CONTRIBUTING, DEPLOYMENT, CHANGELOG, PLAN |
