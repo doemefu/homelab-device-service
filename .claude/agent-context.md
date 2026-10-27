@@ -12,7 +12,7 @@ Repo-specific facts for the `homelab-workflow` agents. Each agent reads only its
   - MQTT topics: `terra1/#`, `terra2/#`, `terraGeneral/#`, `terra{n}/{field}/man`, `terraGeneral/{field}/schedule`, `javaBackend/mqtt/status`; exact JSON payload per topic.
   - DB: Flyway migration filename, columns, constraints for `devices` / `schedules`. This service owns both tables; never specify a migration for a table another service owns (data-service owns only the `netmon` schema).
   - Env vars / Kubernetes secret keys (name and purpose only), JWT scope/role per endpoint.
-- Consumers: furchert-ch and data-service. Backwards-incompatible change: this service ships first, consumers adapt after.
+- Consumer: furchert-ch (its `/dashboard` calls the REST API server-side); data-service has no direct interaction. Backwards-incompatible change: this service ships first, consumers adapt after.
 - Hand-back line: "Contract updated — implementer can start."
 
 ## implementer
@@ -57,7 +57,7 @@ Architecture and tests:
 
 - Maintains: `PLAN.md` (mark phases complete, update status table, record deviations; never delete future phases), `CLAUDE.md` (build commands and architecture section, kept concise), `README.md`, plus the per-file ownership in `.claude/rules/documentation-files.md`.
 - `README.md` must contain: (1) what the service does in 2–3 sentences; (2) key endpoints (method, path, auth required, description); (3) env vars read (name + description); (4) how to build and run locally; (5) how to run locally against a port-forwarded cluster DB/broker (`kubectl port-forward -n apps svc/postgresql 5432:5432`, `svc/mosquitto 1883:1883`).
-- `README.md` is the contract with consumers; `PLAN.md` is the roadmap.
+- `README.md` is the contract with consumers; `PLAN.md` is the roadmap; its pinned-version tables are historical, `pom.xml` and `CLAUDE.md` are authoritative.
 
 ## devops
 
@@ -124,7 +124,7 @@ Applies to this Java/Spring Boot service.
 
 ## doc-auditor
 
-- Context: real-time IoT device management service (Java/Spring Boot, MQTT + InfluxDB + WebSocket) on K3s (namespace `apps`, `replicas: 1`) via Cloudflare Tunnel. Secrets are provisioned by the `infrastructure` repo's `infra/playbooks/59_app_services.yml`. Consumers: furchert-ch and data-service.
+- Context: real-time IoT device management service (Java/Spring Boot, MQTT + InfluxDB + WebSocket) on K3s (namespace `apps`, `replicas: 1`) via Cloudflare Tunnel. Secrets are provisioned by the `infrastructure` repo's `infra/playbooks/59_app_services.yml`. Consumer: furchert-ch; data-service has no direct interaction.
 - Docs to read in full: `README.md`, `OPERATIONS.md`, `DEPLOYMENT.md`, `CONTRIBUTING.md`, `CHANGELOG.md` (`PLAN.md` is the roadmap, maintained by the documenter).
 - Per doc:
   - `README.md`: quick start / quick reference accurate; REST endpoint, WebSocket destination, MQTT topic/payload or JWT claim requirement added or changed.
