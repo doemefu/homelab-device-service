@@ -10,13 +10,13 @@ Runbooks and operational reference for device-service on the K3s cluster.
 
 ```bash
 kubectl -n apps delete pod -l app=device-service
-kubectl -n apps get pods -l app=device-service        # new pod, age in seconds, Ready 1/1
+kubectl -n apps get pods -l app=device-service        # new pod: age in seconds, Ready 1/1 (ignore the old one while it is Terminating)
 kubectl -n apps logs deployment/device-service --tail=50
 ```
 
-> **Note:** Do not use `kubectl rollout restart`. Flux reconciles this Deployment and strips the `restartedAt` annotation at its next apply (every 10 min), so the restart can be cancelled before the new pod is Ready while `rollout status` still reports success, or the pod restarts twice. With `replicas: 1` it would also run two MQTT clients side by side for a moment. See infrastructure `DEPLOYMENT.md`, note under "Enable order (NM-4)". Check the pod age and the startup log, not `rollout status`.
+> **Note:** Do not use `kubectl rollout restart`. Flux reconciles this Deployment and strips the `restartedAt` annotation at its next reconcile (at most 10 min), so the restart can be cancelled before the new pod is Ready while `rollout status` still reports success, or the pod restarts twice. See infrastructure `DEPLOYMENT.md`, note under "Enable order (NM-4)". Check the pod age and the startup log, not `rollout status`.
 >
-> Restarting this service temporarily disconnects the MQTT client (about 30 to 60 s). The client reconnects automatically via Paho's `setAutomaticReconnect(true)`. Scheduled tasks are re-registered from the database on startup.
+> The service is unavailable for about 30 to 60 s (single replica: REST, WebSocket and MQTT). The new pod connects to the broker at startup and re-registers scheduled tasks from the database; `setAutomaticReconnect(true)` only covers broker-side drops in a running pod.
 
 ### View logs
 

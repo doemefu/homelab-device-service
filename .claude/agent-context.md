@@ -69,7 +69,7 @@ Architecture and tests:
   `kubectl -n apps rollout status deployment/device-service`
   `kubectl -n apps get pods -l app=device-service`
   `kubectl -n apps logs deployment/device-service --tail=50`
-- Restart by deleting the pod: `kubectl -n apps delete pod -l app=device-service`, then check pod age and startup log. Never `kubectl rollout restart`: Flux strips its annotation at the next reconcile, so the restart can be cancelled or happen twice, and with `replicas: 1` two MQTT clients would run side by side (infrastructure `DEPLOYMENT.md`, NM-4 note).
+- Restart by deleting the pod: `kubectl -n apps delete pod -l app=device-service`, then check pod age and startup log. Never `kubectl rollout restart`: Flux strips its annotation at the next reconcile, so the restart can be cancelled or happen twice (infrastructure `DEPLOYMENT.md`, NM-4 note). Expect about 30 to 60 s of downtime.
 - Do not lower the startup probe budget (`failureThreshold: 60` x `periodSeconds: 5` = 300 s) or `limits.cpu: 1000m` without measuring actual startup time.
 - Do not touch MQTT/DB credentials or anything in the `infrastructure` repo.
 
