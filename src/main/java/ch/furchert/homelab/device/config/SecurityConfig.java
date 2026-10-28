@@ -80,7 +80,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Health and info probes are public (liveness/readiness checks)
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                // WebSocket endpoint is read-only broadcast — no auth required
+                // WebSocket upgrade stays open: browsers cannot send a bearer token on it.
+                // The JWT is checked on the STOMP CONNECT frame (StompAuthChannelInterceptor).
                 .requestMatchers("/ws/**").permitAll()
                 // Everything else requires a valid JWT
                 .anyRequest().authenticated()

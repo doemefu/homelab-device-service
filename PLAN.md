@@ -132,7 +132,7 @@ The device-service is the **third service to build** (M2 in milestones, but buil
 | GET | `/devices` | JWT | List all devices with current state |
 | GET | `/devices/{id}` | JWT | Single device state |
 | POST | `/devices/{id}/control` | JWT | Send control command (-> MQTT publish) |
-| WS | `/ws` | Optional | STOMP WebSocket, subscribe to `/topic/terrarium/{deviceName}` |
+| WS | `/ws` | JWT on STOMP `CONNECT` (#84) | STOMP WebSocket, subscribe to `/topic/terrarium/{deviceName}` |
 
 ---
 
@@ -223,7 +223,7 @@ The `schedules` table is created by Flyway V2 in this service.
 ### WebSocket
 - STOMP config: endpoint `/ws`, simple broker prefix `/topic`
 - Broadcast to `/topic/terrarium/{deviceName}` on every device state change
-- Auth optional for WebSocket (read-only broadcast)
+- Bearer JWT on STOMP `CONNECT` (#84; kill switch `app.websocket.require-auth`); SUBSCRIBE only under `/topic/terrarium/`, client SEND only to `/app/**`
 
 ### Schedule Entity
 - JPA entity mapped to `schedules` table, created by Flyway V2 in this service
