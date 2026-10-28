@@ -28,7 +28,7 @@ spec:
       containers:
         - name: device-service
           # Image tag is managed by Flux CD image automation.
-          image: ghcr.io/doemefu/homelab-device-service:main-20261028T074135 # {"$imagepolicy": "flux-system:device-service"}
+          image: ghcr.io/doemefu/homelab-device-service:main-20261028T081149 # {"$imagepolicy": "flux-system:device-service"}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
