@@ -15,6 +15,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -31,6 +32,9 @@ jobs:
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
+    # Guards against the QEMU arm64 hang class (furchert-ch#41). Recent whole runs take 2-18 min;
+    # keep the job timeout >= 5 min above the build step's own timeout below.
+    timeout-minutes: 30
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -64,6 +68,7 @@ jobs:
 
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v7
+        timeout-minutes: 25
         with:
           context: .
           platforms: linux/amd64,linux/arm64
