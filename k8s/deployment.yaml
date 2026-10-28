@@ -16,10 +16,28 @@ spec:
         app: device-service
     spec:
       automountServiceAccountToken: false
+      # Numeric ids are required for runAsNonRoot: the image's USER is the name `appuser`, which
+      # kubelet cannot verify as non-root. 100/101 are what `adduser -S appuser -G appgroup` assigns
+      # on the pinned alpine base image; re-check them when the base image changes (#85).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: device-service
           # Image tag is managed by Flux CD image automation.
           image: ghcr.io/doemefu/homelab-device-service:main-20261027T233634 # {"$imagepolicy": "flux-system:device-service"}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # /tmp is the only path the JVM writes at runtime (Tomcat work dir, java.io.tmpdir).
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           ports:
             - containerPort: 8081
           env:
@@ -90,6 +108,10 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "1000m"
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: Service

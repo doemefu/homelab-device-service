@@ -10,6 +10,8 @@
 
 **Deploying a new version:** Push to `main`. CI builds a new image with a `main-YYYYMMDDTHHmmss` tag. Flux detects it within 5 min, commits the updated tag to `k8s/deployment.yaml` in this repo, and the `Kustomization` applies the change to the cluster automatically.
 
+**Pod security context (#85):** pod-level `runAsNonRoot` with numeric `runAsUser: 100` / `runAsGroup: 101` (the ids of the image's `appuser`; re-check them when the base image changes), `seccompProfile: RuntimeDefault`; container-level `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]`. `/tmp` (a 64Mi disk-backed `emptyDir`) is the only writable path: Tomcat's work dir and `java.io.tmpdir` live there, and without it startup fails with `Unable to create tempDir`. Paho uses `MemoryPersistence`, InfluxDB writes are blocking without a disk buffer, and logs go to stdout. A new feature that writes elsewhere needs its own `emptyDir`. After merging a change to the security context, check `kubectl -n apps rollout status deploy/device-service --timeout=400s`; a stalled rollout means revert (the old pod keeps serving meanwhile).
+
 **Checking status:**
 ```bash
 flux get kustomizations -n flux-system          # reconciliation state
