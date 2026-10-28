@@ -105,7 +105,8 @@ class SecurityConfigTest {
     @Test
     void ws_unauthenticated_isPermitAll() throws Exception {
         // /ws/** is permitAll() in Chain 2 — WebSocket upgrades must not require a JWT
-        // so that the browser client can connect without a Bearer token.
+        // because browsers cannot send one on the upgrade; StompAuthChannelInterceptor
+        // checks the bearer token on the STOMP CONNECT frame instead.
         int status = mockMvc.perform(get("/ws/websocket")).andReturn().getResponse().getStatus();
         assertThat(status).as("WebSocket path must not require authentication").isNotIn(401, 302);
     }

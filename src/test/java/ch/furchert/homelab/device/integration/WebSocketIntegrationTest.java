@@ -25,21 +25,35 @@ import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
 import org.springframework.messaging.simp.stomp.StompSessionHandlerAdapter;
+import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketHttpHeaders;
+import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 import java.lang.reflect.Type;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.when;
 
 /**
  * Integration test for the STOMP-over-WebSocket broadcast path.
@@ -49,14 +63,26 @@ import static org.assertj.core.api.Assertions.assertThat;
  * to {@code ws://localhost:{port}/ws}. This exercises the parts that
  * {@code WebSocketBroadcastServiceTest} cannot: the STOMP handshake, the endpoint
  * registration in {@code WebSocketConfig}, the {@code /ws} security rule, the simple
- * broker's destination routing and the JSON wire format of {@link DeviceStateDto}.
+ * broker's destination routing, the JSON wire format of {@link DeviceStateDto} and the
+ * {@code StompAuthChannelInterceptor} rules (bearer JWT on CONNECT, SUBSCRIBE only under
+ * {@code /topic/terrarium/}, no client SEND to {@code /topic/**}) with
+ * {@code app.websocket.require-auth} at its default {@code true}.
  *
  * <p>{@link InfluxWriterService} is mocked so the test does not depend on a live
  * InfluxDB connection, exactly as in {@code MqttIntegrationTest}.
  *
- * <p>Not covered here: the {@code app.websocket.allowed-origins} restriction. A plain
- * JSR-356 client sends no {@code Origin} header and Spring's origin check accepts a
- * missing one, so tightening that property would not be caught by this suite.
+ * <p>Token validation itself is not exercised here: {@link AbstractIntegrationTest} replaces
+ * the {@link JwtDecoder} with a mock, which each test stubs to accept {@link #VALID_TOKEN} and
+ * reject {@link #REJECTED_TOKEN}. The interceptor against the real decoder (expired, wrong
+ * {@code typ}, foreign signing key) is covered by {@code StompAuthRealDecoderTest}.
+ *
+ * <p>Rejection tests never use the shared {@link #session}: each opens its own client session
+ * with a handler that is not wired to {@link #sessionFailure}, so the ERROR frame and the
+ * server-side close they provoke cannot trip the {@code @AfterEach} assertion, and a failure
+ * of the shared session is still reported for every test.
+ *
+ * <p>Origin restriction: a plain JSR-356 client sends no {@code Origin} header and Spring's
+ * origin check accepts a missing one, so the origin tests set the header explicitly.
  *
  * <p>Device-name convention: the PostgreSQL container is shared by every integration
  * test class in the JVM and no test resets it. {@code MqttIntegrationTest} owns
@@ -96,11 +122,18 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
 
     private static final long AWAIT_SECONDS = 10;
 
+    static final String VALID_TOKEN = "ws-it-valid-token";
+    static final String REJECTED_TOKEN = "ws-it-rejected-token";
+
     @MockitoBean
     InfluxWriterService influxWriterService;
 
     @Autowired
     WebSocketBroadcastService broadcastService;
+
+    /** The {@code @MockitoBean} from {@link AbstractIntegrationTest}; reset after every test. */
+    @Autowired
+    JwtDecoder jwtDecoder;
 
     @LocalServerPort
     int port;
@@ -141,21 +174,16 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
 
     @BeforeEach
     void connectStompClient() throws Exception {
-        StompSessionHandlerAdapter handler = new StompSessionHandlerAdapter() {
-            @Override
-            public void handleException(StompSession session, StompCommand command,
-                                        StompHeaders headers, byte[] payload, Throwable exception) {
-                sessionFailure.compareAndSet(null, exception);
-            }
+        Instant now = Instant.now();
+        when(jwtDecoder.decode(VALID_TOKEN)).thenReturn(Jwt.withTokenValue(VALID_TOKEN)
+                .header("alg", "RS256")
+                .subject("ws-it")
+                .issuedAt(now)
+                .expiresAt(now.plusSeconds(300))
+                .build());
+        when(jwtDecoder.decode(REJECTED_TOKEN)).thenThrow(new BadJwtException("rejected by test"));
 
-            @Override
-            public void handleTransportError(StompSession session, Throwable exception) {
-                sessionFailure.compareAndSet(null, exception);
-            }
-        };
-
-        session = stompClient
-                .connectAsync("ws://localhost:" + port + "/ws", handler)
+        session = connect(new WebSocketHttpHeaders(), bearer(VALID_TOKEN), recordingHandler(sessionFailure))
                 .get(AWAIT_SECONDS, TimeUnit.SECONDS);
     }
 
@@ -187,6 +215,33 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
     // ------------------------------------------------------------------
     // Helpers
     // ------------------------------------------------------------------
+
+    private CompletableFuture<StompSession> connect(
+            WebSocketHttpHeaders handshakeHeaders, StompHeaders connectHeaders, StompSessionHandlerAdapter handler) {
+        return stompClient.connectAsync("ws://localhost:" + port + "/ws", handshakeHeaders, connectHeaders, handler);
+    }
+
+    private static StompHeaders bearer(String token) {
+        StompHeaders headers = new StompHeaders();
+        headers.add("Authorization", "Bearer " + token);
+        return headers;
+    }
+
+    /** Records the first transport or payload-handling error into {@code failure}. */
+    private static StompSessionHandlerAdapter recordingHandler(AtomicReference<Throwable> failure) {
+        return new StompSessionHandlerAdapter() {
+            @Override
+            public void handleException(StompSession session, StompCommand command,
+                                        StompHeaders headers, byte[] payload, Throwable exception) {
+                failure.compareAndSet(null, exception);
+            }
+
+            @Override
+            public void handleTransportError(StompSession session, Throwable exception) {
+                failure.compareAndSet(null, exception);
+            }
+        };
+    }
 
     /**
      * Subscribes to {@code /topic/terrarium/{deviceName}} and returns a queue that
@@ -252,14 +307,147 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
     // ------------------------------------------------------------------
 
     /**
-     * The STOMP handshake against {@code /ws} succeeds without any credentials.
+     * The STOMP handshake against {@code /ws} succeeds with a bearer token on CONNECT.
      * {@code SecurityConfigTest} only asserts the request matcher; this proves the
      * real upgrade request is accepted by the running server.
      */
     @Test
-    void stompEndpoint_acceptsUnauthenticatedConnection() {
-        assertThat(session).as("STOMP session established without authentication").isNotNull();
+    void stompEndpoint_acceptsConnectionWithValidBearerToken() {
+        assertThat(session).as("STOMP session established with a bearer token").isNotNull();
         assertThat(session.isConnected()).as("session reports connected").isTrue();
+    }
+
+    @Test
+    void stompEndpoint_rejectsConnectWithoutToken() {
+        assertThatThrownBy(() -> connect(new WebSocketHttpHeaders(), new StompHeaders(),
+                new StompSessionHandlerAdapter() {}).get(AWAIT_SECONDS, TimeUnit.SECONDS))
+                .as("CONNECT without Authorization header")
+                .isInstanceOf(ExecutionException.class);
+    }
+
+    @Test
+    void stompEndpoint_rejectsConnectWithTokenTheDecoderRejects() {
+        assertThatThrownBy(() -> connect(new WebSocketHttpHeaders(), bearer(REJECTED_TOKEN),
+                new StompSessionHandlerAdapter() {}).get(AWAIT_SECONDS, TimeUnit.SECONDS))
+                .as("CONNECT with a token the JwtDecoder rejects")
+                .isInstanceOf(ExecutionException.class);
+    }
+
+    @Test
+    void stompEndpoint_rejectsHandshakeFromForeignOrigin() {
+        WebSocketHttpHeaders handshake = new WebSocketHttpHeaders();
+        handshake.setOrigin("https://evil.example");
+
+        assertThatThrownBy(() -> connect(handshake, bearer(VALID_TOKEN),
+                new StompSessionHandlerAdapter() {}).get(AWAIT_SECONDS, TimeUnit.SECONDS))
+                .as("handshake with Origin https://evil.example")
+                .isInstanceOf(ExecutionException.class);
+    }
+
+    @Test
+    void stompEndpoint_acceptsHandshakeFromAllowedOrigin() throws Exception {
+        WebSocketHttpHeaders handshake = new WebSocketHttpHeaders();
+        handshake.setOrigin("https://furchert.ch");
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        StompSession allowed = connect(handshake, bearer(VALID_TOKEN), recordingHandler(failure))
+                .get(AWAIT_SECONDS, TimeUnit.SECONDS);
+        try {
+            assertThat(allowed.isConnected()).as("session from https://furchert.ch").isTrue();
+        } finally {
+            allowed.disconnect();
+        }
+    }
+
+    /**
+     * A client SEND to a broker destination must never reach subscribers, even from an
+     * authenticated session: the server closes the offending session instead.
+     */
+    @Test
+    void clientSendToTopic_isNotRelayedAndClosesTheSendingSession() throws Exception {
+        BlockingQueue<DeviceStateDto> received = subscribeAndAwaitActive("terra1");
+
+        StompSession sender = connect(new WebSocketHttpHeaders(), bearer(VALID_TOKEN),
+                new StompSessionHandlerAdapter() {}).get(AWAIT_SECONDS, TimeUnit.SECONDS);
+        try {
+            sender.send("/topic/terrarium/terra1", Map.of("name", "terra1", "light", "spoofed"));
+
+            Awaitility.await()
+                    .alias("sending session closed by the server")
+                    .atMost(AWAIT_SECONDS, TimeUnit.SECONDS)
+                    .until(() -> !sender.isConnected());
+            Awaitility.await()
+                    .alias("spoofed frame not relayed to the subscriber")
+                    .during(500, TimeUnit.MILLISECONDS)
+                    .atMost(AWAIT_SECONDS, TimeUnit.SECONDS)
+                    .until(received::isEmpty);
+        } finally {
+            if (sender.isConnected()) {
+                sender.disconnect();
+            }
+        }
+    }
+
+    /**
+     * {@code MESSAGE} is a server-to-client frame, but the STOMP decoder accepts it from a client
+     * and the simple broker would relay it to every subscriber. {@link WebSocketStompClient}
+     * cannot send it, so this test writes raw STOMP frames over a plain WebSocket session.
+     */
+    @Test
+    void rawClientMessageFrame_isNotRelayedAndClosesTheSession() throws Exception {
+        BlockingQueue<DeviceStateDto> received = subscribeAndAwaitActive("terra1");
+        BlockingQueue<String> frames = new LinkedBlockingQueue<>();
+
+        WebSocketSession raw = stompClient.getWebSocketClient().execute(new TextWebSocketHandler() {
+            @Override
+            protected void handleTextMessage(WebSocketSession s, TextMessage message) {
+                frames.add(message.getPayload());
+            }
+        }, new WebSocketHttpHeaders(), URI.create("ws://localhost:" + port + "/ws")).get(AWAIT_SECONDS, TimeUnit.SECONDS);
+        try {
+            raw.sendMessage(new TextMessage("CONNECT\naccept-version:1.2\nhost:localhost\nAuthorization:Bearer "
+                    + VALID_TOKEN + "\n\n\u0000"));
+            assertThat(frames.poll(AWAIT_SECONDS, TimeUnit.SECONDS)).as("reply to CONNECT").startsWith("CONNECTED");
+
+            raw.sendMessage(new TextMessage("MESSAGE\ndestination:/topic/terrarium/terra1\nsubscription:0\n"
+                    + "message-id:spoof-1\ncontent-type:application/json\n\n{\"name\":\"terra1\",\"light\":\"spoofed\"}\u0000"));
+
+            Awaitility.await()
+                    .alias("spoofed MESSAGE frame not relayed to the subscriber")
+                    .during(500, TimeUnit.MILLISECONDS)
+                    .atMost(AWAIT_SECONDS, TimeUnit.SECONDS)
+                    .until(received::isEmpty);
+            Awaitility.await()
+                    .alias("raw session closed by the server")
+                    .atMost(AWAIT_SECONDS, TimeUnit.SECONDS)
+                    .until(() -> !raw.isOpen());
+        } finally {
+            if (raw.isOpen()) {
+                raw.close();
+            }
+        }
+    }
+
+    /**
+     * The service broadcasts only under {@code /topic/terrarium/}; a SUBSCRIBE anywhere else
+     * is rejected and the server closes the session.
+     */
+    @Test
+    void clientSubscribeOutsideTerrariumTopics_closesTheSession() throws Exception {
+        StompSession subscriber = connect(new WebSocketHttpHeaders(), bearer(VALID_TOKEN),
+                new StompSessionHandlerAdapter() {}).get(AWAIT_SECONDS, TimeUnit.SECONDS);
+        try {
+            subscriber.subscribe("/topic/other", new StompSessionHandlerAdapter() {});
+
+            Awaitility.await()
+                    .alias("subscribing session closed by the server")
+                    .atMost(AWAIT_SECONDS, TimeUnit.SECONDS)
+                    .until(() -> !subscriber.isConnected());
+        } finally {
+            if (subscriber.isConnected()) {
+                subscriber.disconnect();
+            }
+        }
     }
 
     /**

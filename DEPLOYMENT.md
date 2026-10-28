@@ -84,14 +84,16 @@ curl -s http://localhost:8081/actuator/health
 
 ### External exposure (WebSocket / REST API)
 
-The frontend connects to the WebSocket endpoint (`/ws`) and REST API. Add a Cloudflare Tunnel entry:
+The REST API and the WebSocket endpoint (`/ws`) are reachable through a Cloudflare Tunnel entry. furchert-ch calls the REST API server-side; no client uses `/ws` yet (a live view in `/dashboard` is deferred). Tunnel entry:
 
 ```yaml
 - hostname: device.furchert.ch   # or your chosen hostname
   service: http://device-service.apps.svc.cluster.local:8081
 ```
 
-WebSocket connections are proxied transparently by Cloudflare Tunnel. No additional configuration is needed.
+WebSocket connections are proxied transparently by Cloudflare Tunnel. No additional configuration is needed. Browser clients must connect from an origin in `app.websocket.allowed-origins` (default `https://furchert.ch`) and send `Authorization: Bearer <access token>` on STOMP `CONNECT`; see [README § WebSocket](README.md#websocket).
+
+The defaults are production values, so `k8s/deployment.yaml` sets neither `APP_WEBSOCKET_ALLOWED_ORIGINS` nor `APP_WEBSOCKET_REQUIRE_AUTH`. To disable CONNECT authentication, open a PR that adds `APP_WEBSOCKET_REQUIRE_AUTH=false` to the container `env` in `k8s/deployment.yaml` (or revert the change); `kubectl set env` does not stick because Flux reverts it on its next apply.
 
 ---
 

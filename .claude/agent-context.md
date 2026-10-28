@@ -18,7 +18,7 @@ Repo-specific facts for the `homelab-workflow` agents. Each agent reads only its
 ## implementer
 
 - Read first: the contract in `README.md` (if contract-affecting), the worklog plan, `CLAUDE.md` (including `## Commands`), `.claude/rules/code-style-conventions.md`.
-- Stack: Java 25, Spring Boot 4.1.1, Spring Security 7 (OAuth2 Resource Server validating JWTs against auth-service JWKS at `/oauth2/jwks`), Eclipse Paho 1.2.5 (MQTT), influxdb-client-java 8.0.0, Flyway, springdoc 3.1.1, Lombok, Jackson 3. Tests: Mockito, MockMvc, Testcontainers (Postgres, InfluxDB, `eclipse-mosquitto:2`).
+- Stack: Java 25, Spring Boot 4.1.2, Spring Security 7 (OAuth2 Resource Server validating JWTs against auth-service JWKS at `/oauth2/jwks`), Eclipse Paho 1.2.5 (MQTT), influxdb-client-java 8.0.0, Flyway, springdoc 3.1.1, Lombok, Jackson 3. Tests: Mockito, MockMvc, Testcontainers (Postgres, InfluxDB, `eclipse-mosquitto:2`).
 - Packages under `ch.furchert.homelab.device`: `config/` (incl. `SecurityConfig`), `controller/`, `dto/`, `entity/`, `repository/`, `service/`, `exception/`.
 - Schema: only via a new Flyway migration `V{n}__{description}.sql`, only for `devices` / `schedules`. `spring.jpa.hibernate.ddl-auto=validate` (never `update`/`create`); history table `flyway_schema_history_device`. Never a migration for a table another service owns.
 - Credentials (MQTT, client secret `DEVICE_SERVICE_CLIENT_SECRET`) come only from env vars / Kubernetes `secretKeyRef`.
@@ -81,7 +81,7 @@ Applies to this Java/Spring Boot service.
 - Plaintext secrets, credentials or tokens in code, properties or test fixtures? Secrets only via env vars; integration tests use test-specific credentials only.
 
 **Version pinning**
-- `latest` tag for Docker base images? Version ranges (`^`, `~`, `+`) in `pom.xml`? Spring Boot pinned to an exact patch (currently 4.1.1, not `4.1.x`)?
+- `latest` tag for Docker base images? Version ranges (`^`, `~`, `+`) in `pom.xml`? Spring Boot pinned to an exact patch (currently 4.1.2, not `4.1.x`)?
 
 **Database migrations**
 - Flyway used for ALL schema changes; no `ddl-auto=create`/`update` in production config?
