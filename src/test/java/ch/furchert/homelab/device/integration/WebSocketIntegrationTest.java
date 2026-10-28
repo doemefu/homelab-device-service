@@ -30,11 +30,15 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketHttpHeaders;
+import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
 import org.springframework.web.socket.messaging.WebSocketStompClient;
 
 import java.lang.reflect.Type;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -380,6 +384,46 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
         } finally {
             if (sender.isConnected()) {
                 sender.disconnect();
+            }
+        }
+    }
+
+    /**
+     * {@code MESSAGE} is a server-to-client frame, but the STOMP decoder accepts it from a client
+     * and the simple broker would relay it to every subscriber. {@link WebSocketStompClient}
+     * cannot send it, so this test writes raw STOMP frames over a plain WebSocket session.
+     */
+    @Test
+    void rawClientMessageFrame_isNotRelayedAndClosesTheSession() throws Exception {
+        BlockingQueue<DeviceStateDto> received = subscribeAndAwaitActive("terra1");
+        BlockingQueue<String> frames = new LinkedBlockingQueue<>();
+
+        WebSocketSession raw = stompClient.getWebSocketClient().execute(new TextWebSocketHandler() {
+            @Override
+            protected void handleTextMessage(WebSocketSession s, TextMessage message) {
+                frames.add(message.getPayload());
+            }
+        }, new WebSocketHttpHeaders(), URI.create("ws://localhost:" + port + "/ws")).get(AWAIT_SECONDS, TimeUnit.SECONDS);
+        try {
+            raw.sendMessage(new TextMessage("CONNECT\naccept-version:1.2\nhost:localhost\nAuthorization:Bearer "
+                    + VALID_TOKEN + "\n\n\u0000"));
+            assertThat(frames.poll(AWAIT_SECONDS, TimeUnit.SECONDS)).as("reply to CONNECT").startsWith("CONNECTED");
+
+            raw.sendMessage(new TextMessage("MESSAGE\ndestination:/topic/terrarium/terra1\nsubscription:0\n"
+                    + "message-id:spoof-1\ncontent-type:application/json\n\n{\"name\":\"terra1\",\"light\":\"spoofed\"}\u0000"));
+
+            Awaitility.await()
+                    .alias("spoofed MESSAGE frame not relayed to the subscriber")
+                    .during(500, TimeUnit.MILLISECONDS)
+                    .atMost(AWAIT_SECONDS, TimeUnit.SECONDS)
+                    .until(received::isEmpty);
+            Awaitility.await()
+                    .alias("raw session closed by the server")
+                    .atMost(AWAIT_SECONDS, TimeUnit.SECONDS)
+                    .until(() -> !raw.isOpen());
+        } finally {
+            if (raw.isOpen()) {
+                raw.close();
             }
         }
     }

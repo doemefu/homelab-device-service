@@ -2,6 +2,7 @@ package ch.furchert.homelab.device.config;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -225,6 +226,33 @@ class StompAuthChannelInterceptorTest {
         Message<?> message = frame(StompCommand.DISCONNECT, a -> {});
 
         assertThat(interceptor(true).preSend(message, channel)).isSameAs(message);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = StompCommand.class, names = {"UNSUBSCRIBE", "ACK", "NACK", "BEGIN", "COMMIT", "ABORT"})
+    void otherClientCommands_pass(StompCommand command) {
+        Message<?> message = frame(command, a -> a.setUser(new JwtAuthenticationToken(jwt())));
+
+        assertThat(interceptor(true).preSend(message, channel)).isSameAs(message);
+    }
+
+    /**
+     * Server-to-client frames sent by a client. The simple broker would relay a client
+     * {@code MESSAGE} to every subscriber of its destination, bypassing the SEND rule.
+     */
+    @ParameterizedTest
+    @EnumSource(value = StompCommand.class, names = {"MESSAGE", "CONNECTED", "RECEIPT", "ERROR"})
+    void serverCommands_fromClient_areRejectedInBothModes(StompCommand command) {
+        for (boolean requireAuth : new boolean[] {true, false}) {
+            assertThatThrownBy(() -> interceptor(requireAuth).preSend(
+                    frame(command, a -> {
+                        a.setDestination("/topic/terrarium/terra1");
+                        a.setUser(new JwtAuthenticationToken(jwt()));
+                    }), channel))
+                    .as("requireAuth=%s, command=%s", requireAuth, command)
+                    .isInstanceOf(MessageDeliveryException.class)
+                    .hasMessage("Forbidden command");
+        }
     }
 
     // ------------------------------------------------------------------

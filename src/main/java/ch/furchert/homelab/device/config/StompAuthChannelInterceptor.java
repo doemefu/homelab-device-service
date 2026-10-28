@@ -26,6 +26,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  *   <li>{@code SEND}: only application destinations ({@code /app/**}) are accepted, regardless of
  *       {@code requireAuth}. Broker destinations such as {@code /topic/**} are server-only; the
  *       simple broker would otherwise relay a client frame to every subscriber.</li>
+ *   <li>Server-to-client commands ({@code MESSAGE}, {@code CONNECTED}, {@code RECEIPT},
+ *       {@code ERROR}) are rejected when a client sends them; the simple broker would relay a
+ *       client {@code MESSAGE} frame just like a {@code SEND}.</li>
  * </ul>
  *
  * <p>Rejections throw {@link MessageDeliveryException} with a fixed message: Spring sends it to the
@@ -76,8 +79,13 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                     throw new MessageDeliveryException(message, "Forbidden destination");
                 }
             }
+            case UNSUBSCRIBE, ACK, NACK, BEGIN, COMMIT, ABORT, DISCONNECT -> {
+                // Client commands that cannot publish or read anything: no checks needed
+            }
             default -> {
-                // DISCONNECT, UNSUBSCRIBE, ACK, NACK, transactions: no checks needed
+                // Server-to-client frames (MESSAGE, CONNECTED, RECEIPT, ERROR). The simple broker
+                // would relay a client MESSAGE to every subscriber, bypassing the SEND rule.
+                throw new MessageDeliveryException(message, "Forbidden command");
             }
         }
         return message;
