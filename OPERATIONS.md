@@ -155,8 +155,12 @@ Common causes: database unreachable, migration checksum mismatch.
 2. Verify the STOMP endpoint is reachable:
    ```bash
    kubectl port-forward -n apps svc/device-service 8081:8081
-   # Connect a STOMP client to ws://localhost:8081/ws
+   # Connect a STOMP client to ws://localhost:8081/ws with the CONNECT header
+   # "Authorization: Bearer <access token>"
    ```
+3. A STOMP `ERROR` frame with message `Unauthorized` on CONNECT means the token is missing, not a `Bearer` token, or rejected by the JWT decoder (expired, wrong signer, `typ: at+jwt`). Rejected CONNECTs are logged only at DEBUG.
+4. A handshake rejected with HTTP 403 comes from the origin check: add the browser origin to `APP_WEBSOCKET_ALLOWED_ORIGINS` (default `https://furchert.ch`; local dev e.g. `http://localhost:3000`).
+5. Emergency kill switch, if a legitimate client cannot send a token yet: open a PR that adds `APP_WEBSOCKET_REQUIRE_AUTH=false` to the container `env` in `k8s/deployment.yaml` (or revert the change). Do not use `kubectl set env`: the Deployment is Flux-managed and Flux reverts it. `SUBSCRIBE` outside `/topic/terrarium/` and client `SEND` outside `/app/**` stay rejected either way.
 
 ### Scheduled commands not executing
 

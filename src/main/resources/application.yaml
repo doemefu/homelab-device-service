@@ -61,7 +61,10 @@ app:
     bucket: ${INFLUX_BUCKET:iot-bucket}
 
   websocket:
-    allowed-origins: "*"
+    # Browser origins allowed to open /ws (comma-separated patterns); local dev: APP_WEBSOCKET_ALLOWED_ORIGINS=http://localhost:3000
+    allowed-origins: "https://furchert.ch"
+    # Require "Authorization: Bearer <jwt>" on STOMP CONNECT; kill switch: APP_WEBSOCKET_REQUIRE_AUTH=false
+    require-auth: true
 
   scheduler:
     poll-interval: 60000
