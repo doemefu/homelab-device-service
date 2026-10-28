@@ -23,7 +23,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  *   <li>{@code SUBSCRIBE}: when {@code requireAuth} is set, the session must have an authenticated
  *       user (normally unreachable, because a rejected CONNECT closes the session). In both modes the
  *       destination must lie under {@code /topic/terrarium/}, the only tree the service broadcasts to.</li>
- *   <li>{@code SEND}: only application destinations ({@code /app/**}) are accepted, regardless of
+ *   <li>{@code SEND}: when {@code requireAuth} is set, the session must have an authenticated user.
+ *       Only application destinations ({@code /app/**}) are accepted, regardless of
  *       {@code requireAuth}. Broker destinations such as {@code /topic/**} are server-only; the
  *       simple broker would otherwise relay a client frame to every subscriber.</li>
  *   <li>Server-to-client commands ({@code MESSAGE}, {@code CONNECTED}, {@code RECEIPT},
@@ -74,6 +75,9 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
                 }
             }
             case SEND -> {
+                if (requireAuth && accessor.getUser() == null) {
+                    throw new MessageDeliveryException(message, "Unauthorized");
+                }
                 String destination = accessor.getDestination();
                 if (destination == null || !destination.startsWith(APP_DESTINATION_PREFIX)) {
                     throw new MessageDeliveryException(message, "Forbidden destination");

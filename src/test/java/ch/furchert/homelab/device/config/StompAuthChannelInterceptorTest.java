@@ -208,6 +208,22 @@ class StompAuthChannelInterceptorTest {
     }
 
     @Test
+    void send_withoutUser_isRejectedWhenAuthRequired() {
+        // SEND before (or without) a successful CONNECT must not reach a future @MessageMapping.
+        assertThatThrownBy(() -> interceptor(true).preSend(
+                frame(StompCommand.SEND, a -> a.setDestination("/app/anything")), channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessage("Unauthorized");
+    }
+
+    @Test
+    void send_withoutUser_passesWhenAuthDisabled() {
+        Message<?> message = frame(StompCommand.SEND, a -> a.setDestination("/app/anything"));
+
+        assertThat(interceptor(false).preSend(message, channel)).isSameAs(message);
+    }
+
+    @Test
     void send_toApplicationDestination_passes() {
         Message<?> message = frame(StompCommand.SEND, a -> {
             a.setDestination("/app/anything");

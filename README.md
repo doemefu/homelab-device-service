@@ -41,6 +41,7 @@ STOMP endpoint at `/ws` (read-only broadcast).
 
 - **Authentication:** the STOMP `CONNECT` frame must carry the native header `Authorization: Bearer <access token>` (the same JWTs the REST API accepts). The WebSocket upgrade itself needs no token, because browsers cannot send one. Kill switch: `app.websocket.require-auth=false` (`APP_WEBSOCKET_REQUIRE_AUTH`).
 - **Origins:** browser handshakes are accepted only from `app.websocket.allowed-origins` (default `https://furchert.ch`; comma-separated patterns, `APP_WEBSOCKET_ALLOWED_ORIGINS`). Clients that send no `Origin` header (non-browser) are not affected.
+- **Token lifetime (residual risk):** the JWT is checked only at `CONNECT`. An open session is not closed when the token's `exp` passes, so a client keeps receiving the read-only broadcast until it disconnects. Accepted because the stream is read-only and clients cannot publish; per-frame or expiry-driven re-validation would be a follow-up.
 - **Client SUBSCRIBE:** only destinations under `/topic/terrarium/` are accepted, in both switch positions; any other `SUBSCRIBE` closes the session with a STOMP `ERROR`.
 - **Client SEND:** only application destinations (`/app/**`) are accepted; a `SEND` to `/topic/**` or any other destination closes the session with a STOMP `ERROR`. Server-to-client frames sent by a client (`MESSAGE`, `CONNECTED`, `RECEIPT`, `ERROR`) are rejected the same way.
 
