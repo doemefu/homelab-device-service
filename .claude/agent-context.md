@@ -69,7 +69,7 @@ Architecture and tests:
   `kubectl -n apps rollout status deployment/device-service`
   `kubectl -n apps get pods -l app=device-service`
   `kubectl -n apps logs deployment/device-service --tail=50`
-- Never `kubectl delete pod` on this deployment: `replicas: 1` with a persistent MQTT connection. Use `kubectl rollout restart deployment/device-service`.
+- Restart by deleting the pod: `kubectl -n apps delete pod -l app=device-service`, then check pod age and startup log. Never `kubectl rollout restart`: Flux strips its annotation at the next reconcile, so the restart can be cancelled or happen twice (infrastructure `DEPLOYMENT.md`, NM-4 note). Expect about 30 to 60 s of downtime.
 - Do not lower the startup probe budget (`failureThreshold: 60` x `periodSeconds: 5` = 300 s) or `limits.cpu: 1000m` without measuring actual startup time.
 - Do not touch MQTT/DB credentials or anything in the `infrastructure` repo.
 
@@ -128,7 +128,7 @@ Applies to this Java/Spring Boot service.
 - Docs to read in full: `README.md`, `OPERATIONS.md`, `DEPLOYMENT.md`, `CONTRIBUTING.md`, `CHANGELOG.md` (`PLAN.md` is the roadmap, maintained by the documenter).
 - Per doc:
   - `README.md`: quick start / quick reference accurate; REST endpoint, WebSocket destination, MQTT topic/payload or JWT claim requirement added or changed.
-  - `OPERATIONS.md`: new runbook entry (`kubectl rollout restart deployment/device-service`), failure mode (MQTT disconnect, InfluxDB write failure) or monitoring note.
+  - `OPERATIONS.md`: new runbook entry (restart: `kubectl -n apps delete pod -l app=device-service`), failure mode (MQTT disconnect, InfluxDB write failure) or monitoring note.
   - `DEPLOYMENT.md`: new env var or Secret key in `device-service-secrets` (provisioned via `infra/playbooks/59_app_services.yml`); changed probe timing or resource limits.
   - `CONTRIBUTING.md`: new local-dev prerequisite, test command or Flyway migration convention.
   - `CHANGELOG.md`: user-visible change since the last entry.

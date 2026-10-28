@@ -9,11 +9,14 @@ Runbooks and operational reference for device-service on the K3s cluster.
 ### Restart device-service
 
 ```bash
-kubectl rollout restart deployment/device-service -n apps
-kubectl rollout status deployment/device-service -n apps
+kubectl -n apps delete pod -l app=device-service
+kubectl -n apps get pods -l app=device-service        # new pod: age in seconds, Ready 1/1 (ignore the old one while it is Terminating)
+kubectl -n apps logs deployment/device-service --tail=50
 ```
 
-> **Note:** Restarting this service temporarily disconnects the MQTT client. The client reconnects automatically via Paho's `setAutomaticReconnect(true)`. Scheduled tasks are re-registered from the database on startup.
+> **Note:** Do not use `kubectl rollout restart`. Flux reconciles this Deployment and strips the `restartedAt` annotation at its next reconcile (at most 10 min), so the restart can be cancelled before the new pod is Ready while `rollout status` still reports success, or the pod restarts twice. See infrastructure `DEPLOYMENT.md`, note under "Enable order (NM-4)". Check the pod age and the startup log, not `rollout status`.
+>
+> The service is unavailable for about 30 to 60 s (single replica: REST, WebSocket and MQTT). The new pod connects to the broker at startup and re-registers scheduled tasks from the database; `setAutomaticReconnect(true)` only covers broker-side drops in a running pod.
 
 ### View logs
 
@@ -64,10 +67,10 @@ kubectl logs -n apps deployment/device-service | grep -i "schedul"
 
 ### Force schedule reload
 
-Restart the service — schedules are loaded from the database on startup:
+Restart the service by deleting its pod (see "Restart device-service") — schedules are loaded from the database on startup:
 
 ```bash
-kubectl rollout restart deployment/device-service -n apps
+kubectl -n apps delete pod -l app=device-service
 ```
 
 ---
@@ -172,9 +175,9 @@ Common causes: database unreachable, migration checksum mismatch.
    ```bash
    kubectl logs -n apps deployment/device-service | grep -i flyway
    ```
-3. Restart to force a schedule reload:
+3. Restart to force a schedule reload (delete the pod, see "Restart device-service"):
    ```bash
-   kubectl rollout restart deployment/device-service -n apps
+   kubectl -n apps delete pod -l app=device-service
    ```
 
 ### REST API returns 401 Unauthorized
