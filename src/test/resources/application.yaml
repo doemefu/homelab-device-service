@@ -10,6 +10,13 @@ spring:
   # Override OAuth2 client provider to avoid OIDC discovery HTTP call at startup in tests
   security:
     oauth2:
+      resourceserver:
+        jwt:
+          # As in production (#81). The dummy jwk-set-uri keeps Boot off the issuer-discovery
+          # decoder, so a test that neither mocks JwtDecoder nor sets a JWKS fails instead of
+          # calling the real auth-service. Tests with a real decoder override it.
+          jwk-set-uri: http://127.0.0.1:1/oauth2/jwks
+          issuer-uri: https://auth.furchert.ch
       client:
         registration:
           device-service:

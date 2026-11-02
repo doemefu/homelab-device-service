@@ -48,6 +48,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -58,9 +59,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Tokens are real RS256 signatures; the harness mirrors {@code AccessTokenTypeGateTest}.
  *
  * <p>Covers what the mocked decoder in the WebSocket integration tests cannot: an expired token,
- * an access token with {@code typ} {@code at+jwt}, and a token signed by a foreign key are all
- * rejected on CONNECT. Issuer and audience are not validated by this service yet; those checks
- * belong to #81 and will apply here automatically because CONNECT uses the same decoder.
+ * an access token with {@code typ} {@code at+jwt}, a token signed by a foreign key, a token with a
+ * wrong or missing issuer and an ID token are all rejected on CONNECT, because CONNECT uses the same
+ * decoder as the REST API (#81). Audience is not validated yet (doemefu/homelab-auth-service#101).
  */
 @WebMvcTest(DeviceController.class)
 @Import(SecurityConfig.class)
@@ -126,6 +127,21 @@ class StompAuthRealDecoderTest {
         assertRejected(token(FOREIGN_KEY, null, Instant.now().plusSeconds(300)));
     }
 
+    @Test
+    void connect_withWrongIssuer_isRejected() throws Exception {
+        assertRejected(token(claims -> claims.issuer("https://evil.example")));
+    }
+
+    @Test
+    void connect_withoutIssuer_isRejected() throws Exception {
+        assertRejected(token(claims -> claims.issuer(null)));
+    }
+
+    @Test
+    void connect_withIdToken_isRejected() throws Exception {
+        assertRejected(token(claims -> claims.audience("grafana").claim("azp", "grafana").claim("role", "ADMIN")));
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -146,6 +162,22 @@ class StompAuthRealDecoderTest {
         accessor.setNativeHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
         accessor.setLeaveMutable(true);
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+    }
+
+    /** Valid token from {@link #SIGNING_KEY} with the claims changed by {@code customizer}. */
+    private static String token(Consumer<JWTClaimsSet.Builder> customizer) throws JOSEException {
+        Instant now = Instant.now();
+        JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
+                .issuer("https://auth.furchert.ch")
+                .subject("owner")
+                .issueTime(Date.from(now))
+                .notBeforeTime(Date.from(now))
+                .expirationTime(Date.from(now.plusSeconds(300)))
+                .jwtID(UUID.randomUUID().toString());
+        customizer.accept(claims);
+        SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(KEY_ID).build(), claims.build());
+        jwt.sign(new RSASSASigner(SIGNING_KEY));
+        return jwt.serialize();
     }
 
     private static String token(RSAKey key, String typ, Instant expiresAt) throws JOSEException {

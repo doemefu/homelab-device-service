@@ -42,7 +42,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -145,17 +144,17 @@ class AccessTokenTypeGateTest {
     }
 
     @Test
-    void controlDevice_withJwtType_passesAuthentication() throws Exception {
-        when(deviceService.getDevice(1L)).thenReturn(Optional.empty());
-
+    void controlDevice_withJwtType_passesAuthenticationButLacksRole() throws Exception {
+        // Authenticated (not 401): only typ differs from the rejected cases. The hub token carries no
+        // role, so the ADMIN rule for device control (#81) denies it with 403 before the controller.
         mockMvc.perform(post("/devices/1/control")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + hubShapedToken("JWT"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(CONTROL_BODY))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isForbidden())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, containsString("insufficient_scope")));
 
-        verify(deviceService).getDevice(1L);
-        verifyNoInteractions(mqttClientService);
+        verifyNoInteractions(deviceService, mqttClientService);
     }
 
     @Test

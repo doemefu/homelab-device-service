@@ -9,7 +9,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -61,7 +63,7 @@ class GlobalExceptionHandlerTest {
         String body = "{\"field\":\"invalid-field\",\"state\":1}";
 
         mockMvc.perform(post("/devices/1/control")
-                        .with(jwt())
+                        .with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -73,7 +75,7 @@ class GlobalExceptionHandlerTest {
         String body = "{\"field\":\"invalid-field\",\"state\":1}";
 
         mockMvc.perform(post("/devices/1/control")
-                        .with(jwt())
+                        .with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -87,7 +89,7 @@ class GlobalExceptionHandlerTest {
         String body = "{\"field\":\"bad\",\"state\":99}";
 
         mockMvc.perform(post("/devices/1/control")
-                        .with(jwt())
+                        .with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())
@@ -118,5 +120,10 @@ class GlobalExceptionHandlerTest {
                 // The raw exception message must never reach the response body
                 .andExpect(jsonPath("$.error").value(not("secret-internal-message")))
                 .andExpect(jsonPath("$").value(not(org.hamcrest.Matchers.hasKey("details"))));
+    }
+
+    /** Control is ADMIN-only (#81). */
+    private static JwtRequestPostProcessor adminJwt() {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 }
