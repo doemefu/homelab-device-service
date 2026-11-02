@@ -120,6 +120,7 @@ All secrets are sourced from the `device-service-secrets` Kubernetes Secret (see
 | `INFLUX_ORG` | Env / ConfigMap | InfluxDB organisation (default: `homelab`) |
 | `INFLUX_BUCKET` | Env / ConfigMap | InfluxDB bucket for sensor data (default: `iot-bucket`) |
 | `JWKS_URI` | Env / ConfigMap | Auth-service JWKS endpoint (default: `http://auth-service.apps.svc.cluster.local:8080/oauth2/jwks`) |
+| `JWT_ISSUER` | Env (not set; default used) | Expected `iss` of access tokens (default: `https://auth.furchert.ch`) |
 | `DEVICE_SERVICE_CLIENT_SECRET` | Secret `device-service-secrets` / key `device-service-client-secret` | OIDC client secret for Swagger SSO login |
 
 ---
@@ -161,7 +162,7 @@ Common causes: database unreachable, migration checksum mismatch.
    # Connect a STOMP client to ws://localhost:8081/ws with the CONNECT header
    # "Authorization: Bearer <access token>"
    ```
-3. A STOMP `ERROR` frame with message `Unauthorized` on CONNECT means the token is missing, not a `Bearer` token, or rejected by the JWT decoder (expired, wrong signer, `typ: at+jwt`). Rejected CONNECTs are logged only at DEBUG.
+3. A STOMP `ERROR` frame with message `Unauthorized` on CONNECT means the token is missing, not a `Bearer` token, or rejected by the JWT decoder (expired, wrong signer, wrong or missing `iss`, `typ: at+jwt`, or an ID token). Rejected CONNECTs are logged only at DEBUG.
 4. A handshake rejected with HTTP 403 comes from the origin check: add the browser origin to `APP_WEBSOCKET_ALLOWED_ORIGINS` (default `https://furchert.ch`; local dev e.g. `http://localhost:3000`).
 5. Emergency kill switch, if a legitimate client cannot send a token yet: open a PR that adds `APP_WEBSOCKET_REQUIRE_AUTH=false` to the container `env` in `k8s/deployment.yaml` (or revert the change). Do not use `kubectl set env`: the Deployment is Flux-managed and Flux reverts it. `SUBSCRIBE` outside `/topic/terrarium/` and client `SEND` outside `/app/**` stay rejected either way.
 
@@ -191,6 +192,11 @@ Common causes: database unreachable, migration checksum mismatch.
    ```bash
    kubectl describe deployment device-service -n apps | grep JWKS_URI
    ```
+3. The token's `iss` must equal `JWT_ISSUER` (default `https://auth.furchert.ch`, the issuer in auth-service's discovery document). ID tokens (claim `azp`) and tokens with header `typ: at+jwt` are rejected as well; the response header `WWW-Authenticate` carries `error="invalid_token"`.
+
+### REST API returns 403 Forbidden
+
+Every method other than GET under `/devices/**` (device control) needs the `role` claim `ADMIN` (#81). Tokens of signed-in users carry their role; client_credentials tokens carry none and get 403 with `WWW-Authenticate: ... error="insufficient_scope"`. Use the access token of an ADMIN user.
 
 ### Swagger login redirect loop / OAuth2 login fails
 

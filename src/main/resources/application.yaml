@@ -20,7 +20,10 @@ spring:
     oauth2:
       resourceserver:
         jwt:
+          # Keys come from the cluster-internal JWKS. issuer-uri is set as well so that the iss
+          # claim is validated (#81); with jwk-set-uri present Boot makes no OIDC discovery call.
           jwk-set-uri: ${JWKS_URI:http://localhost:8080/oauth2/jwks}
+          issuer-uri: ${JWT_ISSUER:https://auth.furchert.ch}
       client:
         registration:
           device-service:

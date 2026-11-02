@@ -33,7 +33,7 @@ export DEVICE_SERVICE_CLIENT_SECRET=<oidc-client-secret>
 ```
 
 The service connects to database `homelabdb` on `localhost:5432`, Mosquitto on `localhost:1883`, and InfluxDB on `localhost:8086` (defaults in `application.yaml`).
-Auth-service must be reachable for JWT JWKS validation (`http://localhost:8080/oauth2/jwks`) and for Swagger SSO login (`https://auth.furchert.ch`).
+Auth-service must be reachable for JWT JWKS validation (`http://localhost:8080/oauth2/jwks`) and for Swagger SSO login (`https://auth.furchert.ch`). Tokens must carry `iss` = `https://auth.furchert.ch` (auth-service's default issuer); a local auth-service with another issuer needs `JWT_ISSUER` set to match.
 
 ---
 

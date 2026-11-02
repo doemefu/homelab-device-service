@@ -27,11 +27,13 @@ Real-time IoT device management service for the doemefu homelab ecosystem -- MQT
 |--------|------|------|-------------|
 | GET | `/devices` | JWT | List all devices with current state |
 | GET | `/devices/{id}` | JWT | Single device state |
-| POST | `/devices/{id}/control` | JWT | Send control command (publishes to MQTT) |
+| POST | `/devices/{id}/control` | JWT, role `ADMIN` (403 otherwise) | Send control command (publishes to MQTT) |
 | GET | `/actuator/health` | None | K8s liveness/readiness |
 | GET | `/actuator/info` | None | Service info |
 | GET | `/api-docs` | OIDC login | OpenAPI JSON spec |
 | GET | `/swagger-ui.html` | OIDC login | Swagger UI |
+
+JWT means an auth-service access token: valid signature (JWKS), `iss` = `https://auth.furchert.ch`, not expired, no `typ: at+jwt`, and no ID token (tokens with an `azp` claim are rejected). Reads accept any such token; every other method under `/devices/**` needs the `role` claim `ADMIN`, which auth-service puts only into tokens of signed-in users (client_credentials tokens carry no role). Audience (`aud`) is not checked yet (doemefu/homelab-auth-service#101, #81).
 
 Unauthenticated browser requests to Swagger endpoints are automatically redirected to auth-service login and returned to Swagger after successful sign-in.
 
@@ -130,6 +132,7 @@ export DEVICE_SERVICE_CLIENT_SECRET=<oidc-client-secret>
 | `app.influxdb.org` | — | `homelab` |
 | `app.influxdb.bucket` | — | `iot-bucket` |
 | `spring.security.oauth2.resourceserver.jwt.jwk-set-uri` | `JWKS_URI` | `http://localhost:8080/oauth2/jwks` |
+| `spring.security.oauth2.resourceserver.jwt.issuer-uri` | `JWT_ISSUER` | `https://auth.furchert.ch` |
 | `spring.security.oauth2.client.registration.device-service.client-secret` | `DEVICE_SERVICE_CLIENT_SECRET` | — (required for Swagger SSO) |
 | `app.websocket.allowed-origins` | `APP_WEBSOCKET_ALLOWED_ORIGINS` | `https://furchert.ch` |
 | `app.websocket.require-auth` | `APP_WEBSOCKET_REQUIRE_AUTH` | `true` |
