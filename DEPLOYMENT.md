@@ -29,7 +29,9 @@ flux reconcile kustomization device-service -n flux-system --with-source
 **Suspending automation** (e.g. for an emergency image pin):
 ```bash
 flux suspend image update device-service -n flux-system
-# Update image tag manually in k8s/deployment.yaml if needed, then:
+# Commit and push the known-good tag to k8s/deployment.yaml while the automation stays suspended.
+# Resume only once the image policy selects a good tag (a fixed image is built), otherwise
+# Flux rewrites the tag to the broken image again:
 flux resume image update device-service -n flux-system
 ```
 
