@@ -7,6 +7,18 @@ metadata:
     app: device-service
 spec:
   replicas: 1
+  # replicas must stay 1 and a rollout must not surge: a second pod connects with the same MQTT
+  # client id (the broker drops the other session, both auto-reconnect and take the session from
+  # each other every ~2.6 s until the old pod exits) and runs a second scheduler (#67).
+  # maxSurge 0 starts terminating the old pod before the new one is created; the old pod drops
+  # MQTT within ms of SIGTERM, the new one connects ~20 s after start. Cost: the startup time is
+  # downtime on every rollout. Not `type: Recreate`: Flux's server-side apply keeps the defaulted
+  # rollingUpdate block, and the API server rejects it together with Recreate.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: device-service

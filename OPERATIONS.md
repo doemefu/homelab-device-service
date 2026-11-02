@@ -16,7 +16,7 @@ kubectl -n apps logs deployment/device-service --tail=50
 
 > **Note:** Do not use `kubectl rollout restart`. Flux reconciles this Deployment and strips the `restartedAt` annotation at its next reconcile (at most 10 min), so the restart can be cancelled before the new pod is Ready while `rollout status` still reports success, or the pod restarts twice. See infrastructure `DEPLOYMENT.md`, note under "Enable order (NM-4)". Check the pod age and the startup log, not `rollout status`.
 >
-> The service is unavailable for about 30 to 60 s (single replica: REST, WebSocket and MQTT). The new pod connects to the broker at startup and re-registers scheduled tasks from the database; `setAutomaticReconnect(true)` only covers broker-side drops in a running pod.
+> The service is unavailable for its startup time, typically about 45 to 95 s (single replica: REST, WebSocket and MQTT). The same applies to every Flux rollout, because the Deployment never runs two pods at once (`maxSurge: 0`, see "MQTT reconnection behavior"). The new pod connects to the broker at startup and re-registers scheduled tasks from the database; `setAutomaticReconnect(true)` only covers broker-side drops in a running pod.
 
 ### View logs
 
@@ -35,7 +35,7 @@ kubectl logs -n apps deployment/device-service | grep -i "mqtt\|connected\|subsc
 ```
 
 Expected on healthy startup:
-- "MQTT connected" or "Connection complete"
+- One `Connected to MQTT broker` line, no `MQTT connection lost`
 - Subscriptions to `terra1/#`, `terra2/#`, `terraGeneral/#`
 - LWT published to `javaBackend/mqtt/status`
 
@@ -44,6 +44,7 @@ Expected on healthy startup:
 - Eclipse Paho auto-reconnect is enabled (`setAutomaticReconnect(true)`)
 - On reconnect, subscriptions are re-established via `MqttCallbackExtended.connectComplete()`
 - LWT (`javaBackend/mqtt/status` with `{"MqttState": 0}`) is published by the broker when the client disconnects ungracefully
+- **`MQTT connection lost` / `Reconnected` every ~2.6 s** means a second client is connected with the same client id `device-service`: the broker drops the older session on each connect, and both clients reconnect after 1 s. Until #67 this happened on every rollout (the default RollingUpdate ran the new pod next to the old one, which also ran a second scheduler); the Deployment now uses `maxSurge: 0`. If the pattern shows up again, look for the second client: a pod still running on a `NotReady` node, or a local `./mvnw spring-boot:run` against the port-forwarded broker without its own `MQTT_CLIENT_ID`.
 
 ### Mosquitto broker down
 

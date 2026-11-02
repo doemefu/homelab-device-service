@@ -30,4 +30,5 @@
 - Pin embedded Tomcat to 11.0.25, overriding the 11.0.24 managed by the Spring Boot 4.1.1 BOM — resolves three critical advisories (GHSA-9xv2-5v5q-p794, GHSA-gcx9-497g-6cp6, GHSA-h3x4-894j-xpx5) in `tomcat-embed-core` (#74).
 
 ### Fixed
+- k8s: rollouts no longer run the new pod next to the old one (`maxSurge: 0`, `maxUnavailable: 1`). Both pods used the MQTT client id `device-service`, so the broker dropped one session after the other and the logs showed `MQTT connection lost` / `Reconnected` every ~2.6 s until the old pod exited, with two schedulers running meanwhile. A rollout now costs the startup time as downtime, typically about 45 to 95 s (#67).
 - k8s: raise CPU limit to 1 CPU and startupProbe budget to 300 s — pods scheduled on the 4-core node exceeded the 150 s startup budget under the 500m quota and crash-looped for days (#60).
