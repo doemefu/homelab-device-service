@@ -97,8 +97,8 @@ public class SecurityConfig {
                 // The JWT is checked on the STOMP CONNECT frame (StompAuthChannelInterceptor).
                 .requestMatchers("/ws/**").permitAll()
                 // Reads stay open to any valid access token; writes (control) are ADMIN-only (#81)
-                .requestMatchers(HttpMethod.GET, "/devices/**").authenticated()
-                .requestMatchers("/devices/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET, "/devices/**", "/schedules/**").authenticated()
+                .requestMatchers("/devices/**", "/schedules/**").hasRole("ADMIN")
                 // Everything else requires a valid JWT
                 .anyRequest().authenticated()
             )

@@ -58,7 +58,9 @@ If Mosquitto is restarted or unavailable:
 
 ## Scheduler
 
-The scheduler polls the `schedules` table every 60 seconds (configurable via `app.scheduler.poll-interval`).
+Schedules are managed through the REST API (`/schedules`, README); API writes take effect immediately. The scheduler also re-reads the `schedules` table every 60 seconds (`app.scheduler.poll-interval`) as a fallback for out-of-band database edits. Cron expressions run in UTC (container default).
+
+If an API write logs `Schedule change saved, but the immediate reload failed`, the change is stored and the next periodic reload applies it.
 
 ### Verify scheduler is running
 

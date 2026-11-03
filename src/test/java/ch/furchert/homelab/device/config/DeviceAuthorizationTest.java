@@ -1,9 +1,11 @@
 package ch.furchert.homelab.device.config;
 
 import ch.furchert.homelab.device.controller.DeviceController;
+import ch.furchert.homelab.device.controller.ScheduleController;
 import ch.furchert.homelab.device.service.DeviceRegistrationService;
 import ch.furchert.homelab.device.service.DeviceService;
 import ch.furchert.homelab.device.service.MqttClientService;
+import ch.furchert.homelab.device.service.ScheduleService;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -48,6 +50,7 @@ import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -65,7 +68,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * {@code AccessTokenTypeGateTest}). Token shapes follow auth-service: user-driven grants carry an
  * unprefixed {@code role} claim, client_credentials tokens carry none, ID tokens carry {@code azp}.
  */
-@WebMvcTest(DeviceController.class)
+@WebMvcTest({DeviceController.class, ScheduleController.class})
 @Import(SecurityConfig.class)
 @TestPropertySource(properties = "DEVICE_SERVICE_CLIENT_SECRET=test")
 class DeviceAuthorizationTest {
@@ -87,6 +90,9 @@ class DeviceAuthorizationTest {
 
     @MockitoBean
     private DeviceRegistrationService deviceRegistrationService;
+
+    @MockitoBean
+    private ScheduleService scheduleService;
 
     @DynamicPropertySource
     static void jwkSetUri(DynamicPropertyRegistry registry) {
@@ -157,6 +163,46 @@ class DeviceAuthorizationTest {
         }
 
         verifyNoInteractions(deviceService, mqttClientService);
+    }
+
+    // -------------------------------------------------------------------------
+    // Schedules (#41): same rule as /devices
+    // -------------------------------------------------------------------------
+
+    @Test
+    void scheduleWrites_withUserOrClientCredentialsToken_areForbidden() throws Exception {
+        String schedule = "{\"deviceName\":\"terra1\",\"field\":\"light\",\"state\":1,"
+                + "\"cronExpression\":\"0 0 8 * * *\",\"active\":true}";
+        for (String token : List.of(userToken("USER"), clientCredentialsToken())) {
+            for (MockHttpServletRequestBuilder request : List.of(
+                    post("/schedules"), put("/schedules/1"), delete("/schedules/1"))) {
+                mockMvc.perform(request.header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(schedule))
+                        .andExpect(status().isForbidden());
+            }
+        }
+
+        verifyNoInteractions(scheduleService);
+    }
+
+    @Test
+    void scheduleCreate_withAdminRole_reachesController() throws Exception {
+        mockMvc.perform(post("/schedules")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken("ADMIN"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"deviceName\":\"terra1\",\"field\":\"light\",\"state\":1,"
+                                + "\"cronExpression\":\"0 0 8 * * *\",\"active\":true}"));
+
+        verify(scheduleService).create(any());
+    }
+
+    @Test
+    void scheduleReads_withClientCredentialsToken_areOk() throws Exception {
+        when(scheduleService.list(null)).thenReturn(List.of());
+
+        mockMvc.perform(get("/schedules").header(HttpHeaders.AUTHORIZATION, "Bearer " + clientCredentialsToken()))
+                .andExpect(status().isOk());
     }
 
     // -------------------------------------------------------------------------

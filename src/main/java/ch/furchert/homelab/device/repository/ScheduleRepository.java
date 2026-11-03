@@ -19,4 +19,10 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
      * @return list of active schedules (never null, may be empty)
      */
     List<Schedule> findByActiveTrue();
+
+    /** All schedules ordered by id (schedules API, #41). */
+    List<Schedule> findAllByOrderByIdAsc();
+
+    /** Schedules labelled with {@code deviceName}, ordered by id (schedules API, #41). */
+    List<Schedule> findByDeviceNameOrderByIdAsc(String deviceName);
 }

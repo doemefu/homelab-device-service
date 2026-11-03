@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Added
+- Schedules REST API (#41): `GET /schedules[?device=]`, `GET /schedules/{id}` (any valid token), `POST`, `PUT` (full replace) and `DELETE /schedules/{id}` (role `ADMIN`). Writes re-register the scheduler tasks immediately; cron is validated (must fire in the future) and runs in UTC; `deviceName` must name an existing device and is a label only (schedules publish to `terraGeneral/{field}/schedule`).
+- Malformed JSON bodies and non-numeric path ids now return `400` instead of `500` on all endpoints.
 - Device registration: `POST /devices` (ADMIN) provisions an auth-service
   OAuth2 `client_credentials` client then persists the device (compensating
   on local failure) and returns the one-time `clientSecret`;
