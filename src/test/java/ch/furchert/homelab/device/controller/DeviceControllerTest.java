@@ -14,7 +14,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor;
 import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
@@ -116,7 +118,7 @@ class DeviceControllerTest {
         String body = "{\"field\":\"light\",\"state\":1}";
 
         mockMvc.perform(post("/devices/1/control")
-                        .with(jwt())
+                        .with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk());
@@ -131,7 +133,7 @@ class DeviceControllerTest {
         String body = "{\"field\":\"light\",\"state\":1}";
 
         mockMvc.perform(post("/devices/99/control")
-                        .with(jwt())
+                        .with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isNotFound());
@@ -147,7 +149,7 @@ class DeviceControllerTest {
     @MethodSource("invalidControlBodies")
     void controlDevice_invalidBody_returns400(String description, String body) throws Exception {
         mockMvc.perform(post("/devices/1/control")
-                        .with(jwt())
+                        .with(adminJwt())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest());
@@ -161,5 +163,10 @@ class DeviceControllerTest {
                 Arguments.of("state below @Min(0)",                "{\"field\":\"light\",\"state\":-1}"),
                 Arguments.of("state above @Max(1)",                "{\"field\":\"light\",\"state\":2}")
         );
+    }
+
+    /** Control is ADMIN-only (#81). */
+    private static JwtRequestPostProcessor adminJwt() {
+        return jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 }

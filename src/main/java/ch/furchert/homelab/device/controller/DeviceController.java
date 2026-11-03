@@ -19,7 +19,8 @@ import java.util.Optional;
 /**
  * REST controller exposing device state and control endpoints.
  *
- * <p>All endpoints require a valid JWT (enforced by Spring Security).
+ * <p>All endpoints require a valid JWT; device control also requires role ADMIN (both enforced in
+ * {@code SecurityConfig}, #81).
  */
 @Slf4j
 @RestController

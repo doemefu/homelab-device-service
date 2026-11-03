@@ -131,7 +131,7 @@ The device-service is the **third service to build** (M2 in milestones, but buil
 |--------|------|------|-------------|
 | GET | `/devices` | JWT | List all devices with current state |
 | GET | `/devices/{id}` | JWT | Single device state |
-| POST | `/devices/{id}/control` | JWT | Send control command (-> MQTT publish) |
+| POST | `/devices/{id}/control` | JWT, role `ADMIN` (#81) | Send control command (-> MQTT publish) |
 | WS | `/ws` | JWT on STOMP `CONNECT` (#84) | STOMP WebSocket, subscribe to `/topic/terrarium/{deviceName}` |
 
 ---
