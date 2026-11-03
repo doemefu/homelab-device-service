@@ -34,7 +34,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @WireMockTest
 class AuthServiceClientTest {
 
-    private static final Duration READ_TIMEOUT = Duration.ofMillis(500);
+    /**
+     * Long enough for the first, cold WireMock response on a slow CI runner (500 ms was not, see
+     * the main build of #117); the stalled stubs below wait well beyond it.
+     */
+    private static final Duration READ_TIMEOUT = Duration.ofSeconds(3);
+    private static final int STALL_MILLIS = (int) READ_TIMEOUT.plusSeconds(3).toMillis();
 
     private AuthServiceClient client;
 
@@ -122,7 +127,7 @@ class AuthServiceClientTest {
         stubToken();
         stubFor(post(urlEqualTo("/api/v1/clients")).willReturn(aResponse()
                 .withStatus(201)
-                .withFixedDelay((int) READ_TIMEOUT.multipliedBy(4).toMillis())));
+                .withFixedDelay(STALL_MILLIS)));
 
         assertThatThrownBy(() -> client.createDeviceClient("terra3", "d"))
                 .isInstanceOf(ResourceAccessException.class);
@@ -132,7 +137,7 @@ class AuthServiceClientTest {
     void createDeviceClient_stalledTokenEndpoint_failsWithinTheReadTimeout() {
         stubFor(post(urlEqualTo("/oauth2/token")).willReturn(okJson(
                 "{\"access_token\":\"t\",\"token_type\":\"Bearer\",\"expires_in\":3600}")
-                .withFixedDelay((int) READ_TIMEOUT.multipliedBy(4).toMillis())));
+                .withFixedDelay(STALL_MILLIS)));
 
         assertThatThrownBy(() -> client.createDeviceClient("terra3", "d"))
                 .isInstanceOf(OAuth2AuthorizationException.class)
