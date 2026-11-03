@@ -36,6 +36,7 @@ import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
@@ -129,10 +130,14 @@ class DeviceAuthorizationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"/devices/1/control/", "/devices/1/%63ontrol"})
-    void control_pathVariantsWithUserRole_neverReachTheController(String path) throws Exception {
-        int status = mockMvc.perform(control(path, userToken("USER"))).andReturn().getResponse().getStatus();
+    void control_pathVariantsWithUserRole_areForbidden(String path) throws Exception {
+        // URI.create keeps the percent-encoding as sent; post(String) would encode it a second time.
+        mockMvc.perform(post(URI.create(path))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken("USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(CONTROL_BODY))
+                .andExpect(status().isForbidden());
 
-        assertThat(status).as("path variant %s must not succeed", path).isGreaterThanOrEqualTo(400);
         verifyNoInteractions(deviceService, mqttClientService);
     }
 
