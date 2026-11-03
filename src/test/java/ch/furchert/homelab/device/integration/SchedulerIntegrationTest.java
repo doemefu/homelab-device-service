@@ -64,11 +64,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 // reuses an id, and every integration context otherwise shares "device-service-test"
 // from src/test/resources/application.yaml.
 //
-// The poll interval is pushed out of the way so that reloadSchedules() only ever runs
-// from the test thread. SchedulerService's registration loop is a check-then-act on
-// activeTasks (containsKey ... then put), so a background @Scheduled reload racing a
-// manual one could register the same schedule twice and leave the loser's
-// ScheduledFuture orphaned in the pool, firing for the rest of the JVM run.
+// The poll interval is pushed out of the way so that reloadSchedules() only runs from
+// the test thread and each test controls exactly when a reload happens. (Concurrent
+// reloads are safe since #75 made the method synchronized; this is about determinism.)
 @TestPropertySource(properties = {
         "app.mqtt.client-id=device-service-sched-it",
         "app.scheduler.poll-interval=3600000"
