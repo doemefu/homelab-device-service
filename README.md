@@ -30,6 +30,7 @@ Real-time IoT device management service for the doemefu homelab ecosystem -- MQT
 | POST | `/devices/{id}/control` | JWT, role `ADMIN` (403 otherwise) | Send control command (publishes to MQTT) |
 | POST | `/devices` | JWT, role `ADMIN` | Register a device and provision its OAuth2 client (see below) → `201` |
 | DELETE | `/devices/{name}` | JWT, role `ADMIN` | Delete a device and revoke its OAuth2 client → `204` |
+| GET/POST/PUT/DELETE | `/schedules`, `/schedules/{id}` | JWT; writes role `ADMIN` | Schedules CRUD (see below) |
 | GET | `/actuator/health` | None | K8s liveness/readiness |
 | GET | `/actuator/info` | None | Service info |
 | GET | `/api-docs` | OIDC login | OpenAPI JSON spec |
@@ -83,6 +84,50 @@ until doemefu/homelab-auth-service#101). Identifiers: `GET /devices/{id}` and co
 numeric row id; `DELETE` uses the canonical `name`.
 
 Unauthenticated browser requests to Swagger endpoints are automatically redirected to auth-service login and returned to Swagger after successful sign-in.
+
+### Schedules (`/schedules`)
+
+Cron-driven MQTT commands (#41, ADR 0001: device-service owns the `schedules` table and executes it). Reads need
+any valid access token (as for `/devices`); writes need the `role` claim `ADMIN`, i.e. a signed-in admin's access
+token (a server-side proxy such as furchert-ch must forward the user's token, not a client_credentials token).
+
+| Method | Path | Auth | Result |
+|--------|------|------|--------|
+| GET | `/schedules[?device=<name>]` | JWT | `200` list of schedules, ordered by id, unpaginated (small table) |
+| GET | `/schedules/{id}` | JWT | `200` schedule, `404` unknown id |
+| POST | `/schedules` | JWT, role `ADMIN` | `201` schedule + `Location: /schedules/{id}` |
+| PUT | `/schedules/{id}` | JWT, role `ADMIN` | Full replace → `200` schedule, `404` unknown id |
+| DELETE | `/schedules/{id}` | JWT, role `ADMIN` | `204`, `404` unknown id |
+
+Request body (POST and PUT, all fields required):
+
+```json
+{ "deviceName": "terra1", "field": "light", "state": 1, "cronExpression": "0 0 8 * * *", "active": true }
+```
+
+- `deviceName`: an existing device (`[a-z0-9-]{3,32}`, otherwise `400`). It is a **grouping label only**: a schedule
+  publishes to `terraGeneral/{field}/schedule`, which every terrarium receives. Deleting a device does not delete its
+  schedules.
+- `field`: `light`, `nightLight` or `rain`; `state`: `0` or `1`. The stored MQTT payload is built like manual control:
+  `{"LightState":1}`.
+- `cronExpression`: Spring cron, 6 fields (seconds first) or a macro such as `@daily`, at most 100 characters, and it
+  must fire at least once in the future (`0 0 0 30 2 *` is rejected). Evaluated in the service's time zone, which is
+  **UTC** (container default): `0 0 8 * * *` fires at 09:00 or 10:00 Zurich time.
+- `active`: required, so that a PUT never re-enables a disabled schedule by omission.
+
+Response body:
+
+```json
+{ "id": 5, "deviceName": "terra1", "field": "light", "state": 1, "payload": "{\"LightState\":1}",
+  "cronExpression": "0 0 8 * * *", "active": true, "nextRun": "2026-11-04T08:00:00Z" }
+```
+
+`state` is `null` when a stored payload does not have the standard `{"<Field>State": n}` shape; `nextRun` is `null`
+for an inactive schedule or when a stored cron expression cannot be evaluated. Writes take effect in the scheduler immediately; the periodic reload
+(`app.scheduler.poll-interval`) only covers out-of-band database edits.
+
+Errors: validation failures and unknown devices return `400 {"error": "Validation failed", "details": ["<field>: <message>"]}`;
+a malformed body or a non-numeric id returns `400 {"error": "..."}`; unknown ids return `404 {"error": "Schedule not found: <id>"}`.
 
 ### WebSocket
 

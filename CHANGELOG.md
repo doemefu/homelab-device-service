@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Schedules REST API (#41): `GET /schedules[?device=]`, `GET /schedules/{id}` (any valid token), `POST`, `PUT` (full replace) and `DELETE /schedules/{id}` (role `ADMIN`). Writes re-register the scheduler tasks immediately; cron is validated (must fire in the future) and runs in UTC; `deviceName` must name an existing device and is a label only (schedules publish to `terraGeneral/{field}/schedule`).
 - Device registration: `POST /devices` (ADMIN) provisions an auth-service
   OAuth2 `client_credentials` client then persists the device (compensating
   on local failure) and returns the one-time `clientSecret`;
@@ -40,5 +41,6 @@
 - Pin embedded Tomcat to 11.0.25, overriding the 11.0.24 managed by the Spring Boot 4.1.1 BOM — resolves three critical advisories (GHSA-9xv2-5v5q-p794, GHSA-gcx9-497g-6cp6, GHSA-h3x4-894j-xpx5) in `tomcat-embed-core` (#74).
 
 ### Fixed
+- Malformed JSON bodies and non-numeric path ids return `400` instead of `500` on all endpoints (#41).
 - k8s: rollouts no longer start the new pod next to the running old one (`maxSurge: 0`, `maxUnavailable: 1`; the old pod starts terminating first). Both pods used the MQTT client id `device-service`, so the broker dropped one session after the other and the logs showed `MQTT connection lost` / `Reconnected` every ~2.6 s until the old pod exited, with two schedulers running meanwhile. A rollout now costs the startup time as downtime, typically about 45 to 95 s (#67).
 - k8s: raise CPU limit to 1 CPU and startupProbe budget to 300 s — pods scheduled on the 4-core node exceeded the 150 s startup budget under the 500m quota and crash-looped for days (#60).

@@ -3,9 +3,11 @@ package ch.furchert.homelab.device.exception;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.List;
 import java.util.Map;
@@ -70,6 +72,64 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(Map.of("error", ex.getMessage()));
+    }
+
+    /**
+     * Handles a schedule that names an unknown device, in the validation-error shape.
+     *
+     * @param ex the exception
+     * @return 400 with {@code details} naming {@code deviceName}
+     */
+    @ExceptionHandler(UnknownDeviceException.class)
+    public ResponseEntity<Map<String, Object>> handleUnknownDevice(UnknownDeviceException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of(
+                        "error", "Validation failed",
+                        "details", List.of("deviceName: " + ex.getMessage())
+                ));
+    }
+
+    /**
+     * Handles an operation targeting an unknown schedule id.
+     *
+     * @param ex the not-found exception
+     * @return 404 with a generic error message
+     */
+    @ExceptionHandler(ScheduleNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleScheduleNotFound(ScheduleNotFoundException ex) {
+        log.info("Schedule not found: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
+    /**
+     * Handles a missing, malformed or wrongly typed JSON body (previously a 500 via the catch-all).
+     *
+     * @param ex the exception
+     * @return 400 without echoing the body
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, String>> handleUnreadable(HttpMessageNotReadableException ex) {
+        log.debug("Unreadable request body: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", "Malformed request body"));
+    }
+
+    /**
+     * Handles a path or query parameter of the wrong type, e.g. {@code /schedules/abc}
+     * (previously a 500 via the catch-all).
+     *
+     * @param ex the exception
+     * @return 400 naming the parameter
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", "Invalid value for parameter '" + ex.getName() + "'"));
     }
 
     /**
