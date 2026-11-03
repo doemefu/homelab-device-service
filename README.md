@@ -140,6 +140,7 @@ Each message contains the full current state of the device after a change.
 kubectl port-forward -n apps svc/postgresql 5432:5432
 kubectl port-forward -n apps svc/mosquitto 1883:1883
 kubectl port-forward -n apps svc/influxdb2 8086:80
+kubectl port-forward -n apps svc/auth-service 8080:8080   # JWKS; admin API for device registration
 ```
 
 ### 2. Set environment variables

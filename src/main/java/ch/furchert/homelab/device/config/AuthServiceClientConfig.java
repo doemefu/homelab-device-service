@@ -4,13 +4,17 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.http.converter.FormHttpMessageConverter;
 import org.springframework.security.oauth2.client.AuthorizedClientServiceOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProvider;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
+import org.springframework.security.oauth2.client.endpoint.RestClientClientCredentialsTokenResponseClient;
+import org.springframework.security.oauth2.client.http.OAuth2ErrorResponseErrorHandler;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.client.OAuth2ClientHttpRequestInterceptor;
 import org.springframework.security.oauth2.client.web.client.RequestAttributePrincipalResolver;
+import org.springframework.security.oauth2.core.http.converter.OAuth2AccessTokenResponseHttpMessageConverter;
 import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
@@ -33,11 +37,37 @@ public class AuthServiceClientConfig {
     @Bean
     OAuth2ClientHttpRequestInterceptor authServiceOAuth2Interceptor(
             ClientRegistrationRepository clientRegistrationRepository,
-            OAuth2AuthorizedClientService authorizedClientService) {
+            OAuth2AuthorizedClientService authorizedClientService,
+            @Value("${app.auth-service.connect-timeout:5s}") Duration connectTimeout,
+            @Value("${app.auth-service.read-timeout:10s}") Duration readTimeout) {
+        return oauth2Interceptor(clientRegistrationRepository, authorizedClientService,
+                connectTimeout, readTimeout);
+    }
+
+    /**
+     * The interceptor with a client_credentials token client whose token requests use the same
+     * timeouts as the admin API calls (Spring Security's default token client sets none).
+     */
+    public static OAuth2ClientHttpRequestInterceptor oauth2Interceptor(
+            ClientRegistrationRepository clientRegistrationRepository,
+            OAuth2AuthorizedClientService authorizedClientService,
+            Duration connectTimeout,
+            Duration readTimeout) {
+
+        RestClientClientCredentialsTokenResponseClient tokenClient =
+                new RestClientClientCredentialsTokenResponseClient();
+        // Same converters and error handler as Spring Security's default token RestClient.
+        tokenClient.setRestClient(RestClient.builder()
+                .requestFactory(requestFactory(connectTimeout, readTimeout))
+                .configureMessageConverters(converters -> converters
+                        .addCustomConverter(new FormHttpMessageConverter())
+                        .addCustomConverter(new OAuth2AccessTokenResponseHttpMessageConverter()))
+                .defaultStatusHandler(new OAuth2ErrorResponseErrorHandler())
+                .build());
 
         OAuth2AuthorizedClientProvider provider =
                 OAuth2AuthorizedClientProviderBuilder.builder()
-                        .clientCredentials()
+                        .clientCredentials(cc -> cc.accessTokenResponseClient(tokenClient))
                         .build();
 
         AuthorizedClientServiceOAuth2AuthorizedClientManager manager =

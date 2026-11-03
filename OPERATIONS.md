@@ -201,7 +201,8 @@ Every method other than GET under `/devices/**` (device control, registration, d
    directly via the auth-service admin API, then re-register:
    ```bash
    # cluster-internal; needs an ADMIN token or clients:admin scope
-   curl -X DELETE http://auth-service.apps.svc.cluster.local:8080/api/v1/clients/<name>
+   curl -X DELETE -H "Authorization: Bearer <admin-access-token>" \
+     http://auth-service.apps.svc.cluster.local:8080/api/v1/clients/<name>
    ```
 3. `5xx` with a compensation log line:
    ```bash
@@ -223,7 +224,10 @@ Every method other than GET under `/devices/**` (device control, registration, d
 5. Deleting a device that was auto-created from its first MQTT message
    (`provisioned = false`) revokes nothing in auth-service (it has no client),
    and the row comes back with the device's next MQTT message.
-6. A device deleted locally but still able to obtain tokens: deletion revokes
+6. `DELETE /devices/{name}` returns `5xx` and the device is still listed: the
+   auth-service revocation failed, so the row was kept on purpose. Fix
+   auth-service connectivity and retry (revocation is idempotent).
+7. A device deleted locally but still able to obtain tokens: deletion revokes
    the client immediately, but already-issued device JWTs stay valid until
    their `exp` (≤1 h) — this is expected (auth-service `INTERFACES.md` §8).
 

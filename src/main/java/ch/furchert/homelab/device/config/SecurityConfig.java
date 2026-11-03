@@ -82,10 +82,10 @@ public class SecurityConfig {
         http
             // Catch-all matcher; acts as fallback because it has lower priority (@Order(2)) than Chain 1
             .securityMatcher("/**")
-            // No CSRF: this chain authenticates only with the Authorization bearer header and keeps
-            // no session or cookie, so a cross-site request cannot carry credentials. With CSRF on,
-            // an unauthenticated write got 403 from the CsrfFilter instead of the 401 challenge (#62).
-            .csrf(csrf -> csrf.disable())
+            // Allow WebSocket upgrade handshakes without CSRF token
+            .csrf(csrf -> csrf
+                .ignoringRequestMatchers("/ws/**")
+            )
             // Stateless — no HTTP session, JWT carries all auth state
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS)

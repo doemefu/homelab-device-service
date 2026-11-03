@@ -22,7 +22,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.Instant;
 import java.util.List;
 
-import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -89,22 +88,21 @@ class DeviceControllerRegistrationTest {
     }
 
     @Test
-    void register_noJwt_returns401() throws Exception {
-        // The API chain is stateless bearer-only (no CSRF), so a request without a token gets
-        // the bearer-token challenge (401), not a CSRF rejection (403).
+    void register_noJwt_isRejected() throws Exception {
+        // Unauthenticated state-changing request: the CsrfFilter rejects it (403) before the
+        // bearer-token entry point runs. Either way the request never reaches the controller.
         mockMvc.perform(post("/devices")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(VALID_BODY))
-                .andExpect(status().isUnauthorized())
-                .andExpect(header().string("WWW-Authenticate", startsWith("Bearer")));
+                .andExpect(status().isForbidden());
 
         verifyNoInteractions(deviceRegistrationService);
     }
 
     @Test
-    void delete_noJwt_returns401() throws Exception {
+    void delete_noJwt_isRejected() throws Exception {
         mockMvc.perform(delete("/devices/terra3"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isForbidden());
 
         verifyNoInteractions(deviceRegistrationService);
     }

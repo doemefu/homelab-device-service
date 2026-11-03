@@ -100,11 +100,11 @@ public class DeviceRegistrationService {
     }
 
     /**
-     * Removes a device locally then revokes its auth-service client. Only devices registered via
-     * {@code POST /devices} ({@code provisioned}) have a client; rows auto-created from the first
-     * MQTT message have none (and reappear with the device's next message). If the auth-service
-     * call fails the local row is already gone — log/alert and do not block (an admin can clean
-     * up auth-service later).
+     * Revokes the device's auth-service client, then removes the local row. Only devices
+     * registered via {@code POST /devices} ({@code provisioned}) have a client; rows auto-created
+     * from the first MQTT message have none (and reappear with the device's next message). If the
+     * revocation fails, the exception propagates and the row stays, so the delete can be retried
+     * (revocation is idempotent in auth-service).
      *
      * @param name the device name
      * @throws DeviceNotFoundException if no such device exists
@@ -113,16 +113,10 @@ public class DeviceRegistrationService {
     public void delete(String name) {
         Device device = deviceRepository.findByName(name)
                 .orElseThrow(() -> new DeviceNotFoundException(name));
-        deviceRepository.delete(device);
-        if (!Boolean.TRUE.equals(device.getProvisioned())) {
-            return;
-        }
-        try {
+        if (Boolean.TRUE.equals(device.getProvisioned())) {
             authServiceClient.deleteDeviceClient(name);
-        } catch (RuntimeException e) {
-            log.error("Local device '{}' deleted but auth-service client revocation "
-                    + "failed — manual cleanup required (clientId={})", name, name, e);
         }
+        deviceRepository.delete(device);
     }
 
     private void compensate(String name) {

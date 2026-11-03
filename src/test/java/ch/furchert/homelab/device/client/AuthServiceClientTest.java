@@ -7,20 +7,20 @@ import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
 import com.github.tomakehurst.wiremock.junit5.WireMockTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.oauth2.client.AuthorizedClientServiceOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.InMemoryOAuth2AuthorizedClientService;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.client.OAuth2ClientHttpRequestInterceptor;
-import org.springframework.security.oauth2.client.web.client.RequestAttributePrincipalResolver;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 import java.time.Duration;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,15 +53,9 @@ class AuthServiceClientTest {
         ClientRegistrationRepository repo = new InMemoryClientRegistrationRepository(registration);
         OAuth2AuthorizedClientService svc = new InMemoryOAuth2AuthorizedClientService(repo);
 
-        AuthorizedClientServiceOAuth2AuthorizedClientManager manager =
-                new AuthorizedClientServiceOAuth2AuthorizedClientManager(repo, svc);
-        manager.setAuthorizedClientProvider(
-                OAuth2AuthorizedClientProviderBuilder.builder().clientCredentials().build());
-
-        OAuth2ClientHttpRequestInterceptor interceptor = new OAuth2ClientHttpRequestInterceptor(manager);
-        interceptor.setPrincipalResolver(new RequestAttributePrincipalResolver());
-        interceptor.setAuthorizationFailureHandler(
-                OAuth2ClientHttpRequestInterceptor.authorizationFailureHandler(svc));
+        // Production wiring: the same interceptor (and token client timeouts) as the app uses.
+        OAuth2ClientHttpRequestInterceptor interceptor =
+                AuthServiceClientConfig.oauth2Interceptor(repo, svc, Duration.ofSeconds(2), READ_TIMEOUT);
 
         RestClient restClient = RestClient.builder()
                 .baseUrl(baseUrl)
@@ -132,5 +126,17 @@ class AuthServiceClientTest {
 
         assertThatThrownBy(() -> client.createDeviceClient("terra3", "d"))
                 .isInstanceOf(ResourceAccessException.class);
+    }
+
+    @Test
+    void createDeviceClient_stalledTokenEndpoint_failsWithinTheReadTimeout() {
+        stubFor(post(urlEqualTo("/oauth2/token")).willReturn(okJson(
+                "{\"access_token\":\"t\",\"token_type\":\"Bearer\",\"expires_in\":3600}")
+                .withFixedDelay((int) READ_TIMEOUT.multipliedBy(4).toMillis())));
+
+        assertThatThrownBy(() -> client.createDeviceClient("terra3", "d"))
+                .isInstanceOf(OAuth2AuthorizationException.class)
+                .satisfies(e -> assertThat(Stream.<Throwable>iterate(e, Objects::nonNull, Throwable::getCause)
+                        .anyMatch(ResourceAccessException.class::isInstance)).isTrue());
     }
 }

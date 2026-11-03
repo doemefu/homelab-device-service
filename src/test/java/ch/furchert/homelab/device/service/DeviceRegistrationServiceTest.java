@@ -190,15 +190,15 @@ class DeviceRegistrationServiceTest {
     }
 
     @Test
-    void delete_present_removesRowThenRevokesClient() {
+    void delete_present_revokesClientThenRemovesRow() {
         Device d = Device.builder().id(1L).name("terra3").provisioned(true).build();
         when(deviceRepository.findByName("terra3")).thenReturn(Optional.of(d));
 
         service.delete("terra3");
 
-        var inOrder = inOrder(deviceRepository, authServiceClient);
-        inOrder.verify(deviceRepository).delete(d);
+        var inOrder = inOrder(authServiceClient, deviceRepository);
         inOrder.verify(authServiceClient).deleteDeviceClient("terra3");
+        inOrder.verify(deviceRepository).delete(d);
     }
 
     @Test
@@ -212,14 +212,15 @@ class DeviceRegistrationServiceTest {
     }
 
     @Test
-    void delete_authServiceFailure_doesNotThrow() {
+    void delete_revocationFails_keepsRowAndPropagates() {
+        // 204 with a still-active client would be wrong, and a retry would get 404.
         Device d = Device.builder().id(1L).name("terra3").provisioned(true).build();
         when(deviceRepository.findByName("terra3")).thenReturn(Optional.of(d));
-        doThrow(new RuntimeException("auth-service down")).when(authServiceClient).deleteDeviceClient("terra3");
+        RuntimeException down = new RuntimeException("auth-service down");
+        doThrow(down).when(authServiceClient).deleteDeviceClient("terra3");
 
-        // Local row already deleted — must not propagate.
-        service.delete("terra3");
+        assertThatThrownBy(() -> service.delete("terra3")).isSameAs(down);
 
-        verify(deviceRepository).delete(d);
+        verify(deviceRepository, never()).delete(any(Device.class));
     }
 }
