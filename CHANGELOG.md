@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Added
+- Device registration: `POST /devices` (ADMIN) provisions an auth-service
+  OAuth2 `client_credentials` client then persists the device (compensating
+  on local failure) and returns the one-time `clientSecret`;
+  `DELETE /devices/{name}` (ADMIN) removes both. New Flyway `V3` adds
+  `type`, `description`, `created_at`, `provisioned` to `devices`. Adds a
+  `device-service-admin` `client_credentials` OAuth2 registration; calls to
+  the auth-service admin API time out (connect 5 s, read 10 s), and an
+  unknown creation outcome (timeout, reset) is compensated as well (#62).
 - Initial implementation of homelab-device-service
 - MQTT client (Eclipse Paho 1.2.5) with auto-reconnect and LWT
 - MQTT message parser for all topic patterns (sensor data, device status, light/nightlight/rain state)
@@ -22,6 +30,7 @@
 - OpenAPI / Swagger UI documentation
 
 ### Security
+- The one-time device `clientSecret` is redacted from the `toString()` of the DTOs that carry it (#62).
 - JWT validation (#81, interim): the `iss` claim must be `https://auth.furchert.ch` (`JWT_ISSUER`), and ID tokens (claim `azp`) are rejected as bearer tokens on REST and STOMP `CONNECT`. The auth-service `role` claim is mapped to `ROLE_*` next to `SCOPE_*`; `POST /devices/{id}/control` and every other non-GET request under `/devices/**` need role `ADMIN` (403 otherwise), reads stay open to any valid access token. Audience and token-type checks follow doemefu/homelab-auth-service#101.
 - Spring Boot 4.1.1 → 4.1.2: Jackson 2.21.7 / 3.1.7 resolve GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89, GHSA-cxp5-3px4-pw24, GHSA-wv8q-qhhj-9h54, GHSA-q4xh-88c3-wmh7, GHSA-gx83-3vf8-gh7j and GHSA-wjgm-6hv5-3cvf in `jackson-core` / `jackson-databind`; the BOM now manages Tomcat 11.0.27, so the 11.0.25 override is removed; PostgreSQL JDBC 42.7.13 → 42.7.14 (#102).
 - WebSocket/STOMP hardening (#84): STOMP `CONNECT` requires `Authorization: Bearer <jwt>`, validated by the resource-server JWT decoder (kill switch `app.websocket.require-auth`, default `true`); browser origins limited to `app.websocket.allowed-origins` (default `https://furchert.ch` instead of `*`); client `SEND` frames are accepted only for `/app/**`, so clients can no longer publish into `/topic/**`; `SUBSCRIBE` is limited to `/topic/terrarium/**`; client-sent server frames (`MESSAGE` etc.) are rejected.

@@ -122,7 +122,8 @@ All secrets are sourced from the `device-service-secrets` Kubernetes Secret (see
 | `INFLUX_BUCKET` | Env / ConfigMap | InfluxDB bucket for sensor data (default: `iot-bucket`) |
 | `JWKS_URI` | Env / ConfigMap | Auth-service JWKS endpoint (default: `http://auth-service.apps.svc.cluster.local:8080/oauth2/jwks`) |
 | `JWT_ISSUER` | Env (not set; default used) | Expected `iss` of access tokens (default: `https://auth.furchert.ch`) |
-| `DEVICE_SERVICE_CLIENT_SECRET` | Secret `device-service-secrets` / key `device-service-client-secret` | OIDC client secret for Swagger SSO login |
+| `AUTH_SERVICE_BASE_URL` | Env / ConfigMap | Auth-service base URL for the admin client API used by device registration (default: `http://auth-service.apps.svc.cluster.local:8080`) |
+| `DEVICE_SERVICE_CLIENT_SECRET` | Secret `device-service-secrets` / key `device-service-client-secret` | OAuth2 client secret — reused for Swagger SSO login **and** the `device-service-admin` `client_credentials` registration that calls the auth-service admin API |
 
 ---
 
@@ -185,7 +186,50 @@ Common causes: database unreachable, migration checksum mismatch.
 
 ### REST API returns 403 Forbidden
 
-Every method other than GET under `/devices/**` (device control) needs the `role` claim `ADMIN` (#81). Tokens of signed-in users carry their role; client_credentials tokens carry none and get 403 with `WWW-Authenticate: ... error="insufficient_scope"`. Use the access token of an ADMIN user.
+Every method other than GET under `/devices/**` (device control, registration, deletion) needs the `role` claim `ADMIN` (#81). Tokens of signed-in users carry their role; client_credentials tokens carry none and get 403 with `WWW-Authenticate: ... error="insufficient_scope"`. Use the access token of an ADMIN user.
+
+### Device registration (`POST /devices`) fails
+
+1. `403 Forbidden` — the caller's JWT lacks `role: ADMIN` (mapped to
+   `ROLE_ADMIN`). Confirm the user is an admin in auth-service.
+2. `409 Conflict` — the device name already exists locally **or** auth-service
+   already has that `clientId`. Pick another name or `DELETE /devices/{name}`
+   first. **Orphaned-client dead-end:** if you get `409` but `GET /devices`
+   shows no such device, an earlier compensation failed and left an
+   auth-service client with no local row. `DELETE /devices/{name}` returns
+   `404` (no local row to delete) and does **not** clear it — reconcile
+   directly via the auth-service admin API, then re-register:
+   ```bash
+   # cluster-internal; needs an ADMIN token or clients:admin scope
+   curl -X DELETE -H "Authorization: Bearer <admin-access-token>" \
+     http://auth-service.apps.svc.cluster.local:8080/api/v1/clients/<name>
+   ```
+3. `5xx` with a compensation log line:
+   ```bash
+   kubectl logs -n apps deployment/device-service | grep -iE "compensat|orphaned auth-service client"
+   ```
+   `COMPENSATION FAILED — orphaned auth-service client` means an auth-service
+   client exists with no local row. Reconcile manually via the auth-service
+   admin API (`DELETE /api/v1/clients/{clientId}`). `Outcome of auth-service
+   client creation ... is unknown` (timeout, reset) is followed by the same
+   compensation; retry the registration once auth-service is healthy.
+4. Token/connectivity errors calling auth-service: verify `AUTH_SERVICE_BASE_URL`
+   and that the `device-service` client has the `client_credentials` grant +
+   `clients:admin` scope in auth-service (auth-service `INTERFACES.md` §8).
+   auth-service seeds clients only once (existing rows are skipped), so check the
+   live row, not `application.yaml` (reads no secret column):
+   ```bash
+   kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc "SELECT client_id, authorization_grant_types, scopes FROM oauth2_registered_client WHERE client_id = 'device-service'"
+   ```
+5. Deleting a device that was auto-created from its first MQTT message
+   (`provisioned = false`) revokes nothing in auth-service (it has no client),
+   and the row comes back with the device's next MQTT message.
+6. `DELETE /devices/{name}` returns `5xx` and the device is still listed: the
+   auth-service revocation failed, so the row was kept on purpose. Fix
+   auth-service connectivity and retry (revocation is idempotent).
+7. A device deleted locally but still able to obtain tokens: deletion revokes
+   the client immediately, but already-issued device JWTs stay valid until
+   their `exp` (≤1 h) — this is expected (auth-service `INTERFACES.md` §8).
 
 ### Swagger login redirect loop / OAuth2 login fails
 

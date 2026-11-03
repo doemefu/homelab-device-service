@@ -44,6 +44,35 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles a duplicate device name (local or auth-service 409 conflict).
+     *
+     * @param ex the conflict exception
+     * @return 409 with a generic error message (no request/response echo —
+     *         the registration response carries a one-time client secret)
+     */
+    @ExceptionHandler(DeviceAlreadyExistsException.class)
+    public ResponseEntity<Map<String, String>> handleConflict(DeviceAlreadyExistsException ex) {
+        log.info("Device registration conflict: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
+    /**
+     * Handles an operation targeting an unknown device.
+     *
+     * @param ex the not-found exception
+     * @return 404 with a generic error message
+     */
+    @ExceptionHandler(DeviceNotFoundException.class)
+    public ResponseEntity<Map<String, String>> handleNotFound(DeviceNotFoundException ex) {
+        log.info("Device not found: {}", ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", ex.getMessage()));
+    }
+
+    /**
      * Catch-all handler for any unhandled exception.
      *
      * <p>The exception message is intentionally not forwarded to the client
