@@ -3,6 +3,7 @@ package ch.furchert.homelab.device.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.security.oauth2.client.AuthorizedClientServiceOAuth2AuthorizedClientManager;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProvider;
 import org.springframework.security.oauth2.client.OAuth2AuthorizedClientProviderBuilder;
@@ -11,6 +12,9 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.web.client.OAuth2ClientHttpRequestInterceptor;
 import org.springframework.security.oauth2.client.web.client.RequestAttributePrincipalResolver;
 import org.springframework.web.client.RestClient;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 /**
  * Wires the OAuth2-aware {@link RestClient} used by {@code AuthServiceClient}
@@ -55,10 +59,24 @@ public class AuthServiceClientConfig {
     @Bean
     RestClient authServiceRestClient(
             @Value("${app.auth-service.base-url}") String baseUrl,
+            @Value("${app.auth-service.connect-timeout:5s}") Duration connectTimeout,
+            @Value("${app.auth-service.read-timeout:10s}") Duration readTimeout,
             OAuth2ClientHttpRequestInterceptor authServiceOAuth2Interceptor) {
         return RestClient.builder()
                 .baseUrl(baseUrl)
+                .requestFactory(requestFactory(connectTimeout, readTimeout))
                 .requestInterceptor(authServiceOAuth2Interceptor)
                 .build();
+    }
+
+    /**
+     * JDK HTTP client with explicit timeouts: {@code RestClient.builder()} applies none, so a hung
+     * auth-service would otherwise block the request thread (and its DB transaction) indefinitely.
+     */
+    public static JdkClientHttpRequestFactory requestFactory(Duration connectTimeout, Duration readTimeout) {
+        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient);
+        factory.setReadTimeout(readTimeout);
+        return factory;
     }
 }

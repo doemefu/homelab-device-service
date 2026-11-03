@@ -14,6 +14,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.time.Instant;
 import java.util.List;
@@ -130,8 +133,65 @@ class DeviceRegistrationServiceTest {
     }
 
     @Test
+    void register_authServiceOutcomeUnknown_compensatesAndRethrows() {
+        // Timeout or reset after auth-service may already have created the client.
+        when(deviceRepository.existsByName("terra3")).thenReturn(false);
+        ResourceAccessException timeout = new ResourceAccessException("Read timed out");
+        when(authServiceClient.createDeviceClient(any(), any())).thenThrow(timeout);
+
+        assertThatThrownBy(() -> service.register(req())).isSameAs(timeout);
+
+        verify(authServiceClient, times(1)).deleteDeviceClient("terra3");
+        verify(deviceRepository, never()).saveAndFlush(any(Device.class));
+    }
+
+    @Test
+    void register_authServiceErrorStatus_doesNotCompensate() {
+        // auth-service answered with an error status: nothing was created.
+        when(deviceRepository.existsByName("terra3")).thenReturn(false);
+        HttpClientErrorException forbidden = new HttpClientErrorException(HttpStatus.FORBIDDEN);
+        when(authServiceClient.createDeviceClient(any(), any())).thenThrow(forbidden);
+
+        assertThatThrownBy(() -> service.register(req())).isSameAs(forbidden);
+
+        verify(authServiceClient, never()).deleteDeviceClient(any());
+    }
+
+    @Test
+    void register_authServiceConflict_isNotCompensated() {
+        when(deviceRepository.existsByName("terra3")).thenReturn(false);
+        when(authServiceClient.createDeviceClient(any(), any()))
+                .thenThrow(new DeviceAlreadyExistsException("terra3"));
+
+        assertThatThrownBy(() -> service.register(req())).isInstanceOf(DeviceAlreadyExistsException.class);
+
+        verify(authServiceClient, never()).deleteDeviceClient(any());
+    }
+
+    @Test
+    void delete_autoCreatedDevice_doesNotRevokeAnyClient() {
+        // Rows created from the first MQTT message have no auth-service client.
+        Device d = Device.builder().id(1L).name("terra1").provisioned(false).build();
+        when(deviceRepository.findByName("terra1")).thenReturn(Optional.of(d));
+
+        service.delete("terra1");
+
+        verify(deviceRepository).delete(d);
+        verifyNoInteractions(authServiceClient);
+    }
+
+    @Test
+    void secretsAreRedactedInToString() {
+        DeviceRegisteredResponse response = new DeviceRegisteredResponse("terra3", "terrarium", "terra3",
+                "plaintext-secret", List.of("mqtt:pub"), Instant.EPOCH, "terra3", List.of("terra3/#"));
+
+        assertThat(CREATED.toString()).doesNotContain("plaintext-secret").contains("terra3");
+        assertThat(response.toString()).doesNotContain("plaintext-secret").contains("terra3");
+    }
+
+    @Test
     void delete_present_removesRowThenRevokesClient() {
-        Device d = Device.builder().id(1L).name("terra3").build();
+        Device d = Device.builder().id(1L).name("terra3").provisioned(true).build();
         when(deviceRepository.findByName("terra3")).thenReturn(Optional.of(d));
 
         service.delete("terra3");
@@ -153,7 +213,7 @@ class DeviceRegistrationServiceTest {
 
     @Test
     void delete_authServiceFailure_doesNotThrow() {
-        Device d = Device.builder().id(1L).name("terra3").build();
+        Device d = Device.builder().id(1L).name("terra3").provisioned(true).build();
         when(deviceRepository.findByName("terra3")).thenReturn(Optional.of(d));
         doThrow(new RuntimeException("auth-service down")).when(authServiceClient).deleteDeviceClient("terra3");
 

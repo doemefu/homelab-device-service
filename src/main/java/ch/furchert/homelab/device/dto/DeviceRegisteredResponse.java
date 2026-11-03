@@ -8,7 +8,7 @@ import java.util.List;
  *
  * <p>{@code clientSecret} is the auth-service-issued plaintext secret, returned
  * <strong>exactly once</strong>. It is never persisted by device-service and
- * must never be logged (see {@code GlobalExceptionHandler} and the SPEC Risks).
+ * must never be logged; {@link #toString()} redacts it.
  *
  * @param name             canonical device id
  * @param type             device type (may be null)
@@ -28,4 +28,12 @@ public record DeviceRegisteredResponse(
         Instant createdAt,
         String mqttUsername,
         List<String> mqttTopicsAllowed
-) {}
+) {
+    /** Never prints the one-time secret (logs, Sentry). */
+    @Override
+    public String toString() {
+        return "DeviceRegisteredResponse[name=" + name + ", type=" + type + ", clientId=" + clientId
+                + ", clientSecret=<redacted>, scopes=" + scopes + ", createdAt=" + createdAt
+                + ", mqttUsername=" + mqttUsername + ", mqttTopicsAllowed=" + mqttTopicsAllowed + "]";
+    }
+}

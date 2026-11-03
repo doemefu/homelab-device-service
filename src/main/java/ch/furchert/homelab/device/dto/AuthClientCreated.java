@@ -17,4 +17,11 @@ public record AuthClientCreated(
         String clientSecret,
         List<String> scopes,
         Instant createdAt
-) {}
+) {
+    /** Never prints the one-time secret (logs, Sentry). */
+    @Override
+    public String toString() {
+        return "AuthClientCreated[clientId=" + clientId + ", clientSecret=<redacted>, scopes=" + scopes
+                + ", createdAt=" + createdAt + "]";
+    }
+}

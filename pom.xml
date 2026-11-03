@@ -182,12 +182,13 @@
 			<scope>test</scope>
 		</dependency>
 
-		<!-- WireMock for AuthServiceClient HTTP + OAuth2 token tests.
-		     4.2.1 ships WireMock 4.x (Jetty 12.1) — Spring Boot 4 compatible. -->
+		<!-- WireMock for AuthServiceClient HTTP + OAuth2 token tests (test scope only).
+		     The 4.x line brings WireMock 3.13.2 on Jetty 12.1 and is Spring Boot 4 compatible;
+		     approved by an independent go/no-go review for #62. -->
 		<dependency>
 			<groupId>org.wiremock.integrations</groupId>
 			<artifactId>wiremock-spring-boot</artifactId>
-			<version>4.2.1</version>
+			<version>4.4.3</version>
 			<scope>test</scope>
 		</dependency>
 

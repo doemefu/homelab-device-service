@@ -61,7 +61,7 @@ Auth-service must be reachable for JWT JWKS validation (`http://localhost:8080/o
 |----------|------|-------------|
 | `src/test/.../service/` | Unit tests (Mockito) | None |
 | `src/test/.../controller/` | MockMvc slice tests (`@WebMvcTest`) | None |
-| `src/test/.../client/` | WireMock HTTP + OAuth2 tests (`@WireMockTest`) — `wiremock-spring-boot:4.2.1` | None (no Docker) |
+| `src/test/.../client/` | WireMock HTTP + OAuth2 tests (`@WireMockTest`) — `wiremock-spring-boot:4.4.3` | None (no Docker) |
 | `src/test/.../integration/` | Integration tests (Testcontainers) | Docker |
 
 `AbstractIntegrationTest` provides shared containers (PostgreSQL, Mosquitto, InfluxDB) for all integration tests via `@DynamicPropertySource`.

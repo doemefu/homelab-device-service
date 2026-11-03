@@ -73,6 +73,15 @@ device-service, never logged). Flash it onto the device. `DELETE
 /devices/{name}` deletes the row and revokes the auth-service client
 (idempotent; `404` if the device is unknown).
 
+Scope today (provisioning only): the broker does not yet authenticate devices against
+auth-service (doemefu/homelab#122), and device-service subscribes only to `terra1/#`,
+`terra2/#` and `terraGeneral/#`, so `mqttUsername` and `mqttTopicsAllowed` describe the
+target state. Devices that already exist as auto-created rows (from their first MQTT message)
+get `409`. A device's own `client_credentials` token carries no role: it can read
+`GET /devices/**` and subscribe via STOMP, but not write (no audience or scope gate on reads
+until doemefu/homelab-auth-service#101). Identifiers: `GET /devices/{id}` and control use the
+numeric row id; `DELETE` uses the canonical `name`.
+
 Unauthenticated browser requests to Swagger endpoints are automatically redirected to auth-service login and returned to Swagger after successful sign-in.
 
 ### WebSocket

@@ -13,13 +13,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
 
 /**
  * Orchestrates device registration across auth-service and the local DB.
  *
- * <p>Order matters (SPEC §4): the OAuth2 client is provisioned in auth-service
+ * <p>Order matters (#62): the OAuth2 client is provisioned in auth-service
  * <strong>first</strong> (it can fail for many reasons — duplicate, network,
  * auth), then the device row is written locally. If the local write fails the
  * auth-service client is compensated (deleted). {@code @Transactional} only
@@ -50,7 +51,20 @@ public class DeviceRegistrationService {
         }
 
         // 1. Provision the OAuth2 client FIRST (external source of truth).
-        AuthClientCreated created = authServiceClient.createDeviceClient(name, req.description());
+        AuthClientCreated created;
+        try {
+            created = authServiceClient.createDeviceClient(name, req.description());
+        } catch (DeviceAlreadyExistsException | RestClientResponseException e) {
+            // auth-service answered with an error status: no client was created.
+            throw e;
+        } catch (RuntimeException e) {
+            // Timeout, reset or unreadable response: the client may exist. Deleting is safe
+            // (idempotent in auth-service, device clients only), and a retry then starts clean.
+            log.error("Outcome of auth-service client creation for device '{}' is unknown "
+                    + "— compensating by deleting the auth client", name, e);
+            compensate(name);
+            throw e;
+        }
 
         // 2. Persist locally. saveAndFlush forces the INSERT now so a
         //    constraint violation surfaces inside this try (not at tx commit,
@@ -86,9 +100,11 @@ public class DeviceRegistrationService {
     }
 
     /**
-     * Removes a device locally then revokes its auth-service client. If the
-     * auth-service call fails the local row is already gone — log/alert and do
-     * not block (an admin can clean up auth-service later).
+     * Removes a device locally then revokes its auth-service client. Only devices registered via
+     * {@code POST /devices} ({@code provisioned}) have a client; rows auto-created from the first
+     * MQTT message have none (and reappear with the device's next message). If the auth-service
+     * call fails the local row is already gone — log/alert and do not block (an admin can clean
+     * up auth-service later).
      *
      * @param name the device name
      * @throws DeviceNotFoundException if no such device exists
@@ -98,6 +114,9 @@ public class DeviceRegistrationService {
         Device device = deviceRepository.findByName(name)
                 .orElseThrow(() -> new DeviceNotFoundException(name));
         deviceRepository.delete(device);
+        if (!Boolean.TRUE.equals(device.getProvisioned())) {
+            return;
+        }
         try {
             authServiceClient.deleteDeviceClient(name);
         } catch (RuntimeException e) {
@@ -111,7 +130,7 @@ public class DeviceRegistrationService {
             authServiceClient.deleteDeviceClient(name);
         } catch (RuntimeException ce) {
             // Inconsistent state: auth client exists, no local row, compensation
-            // failed. Logged at ERROR (Sentry-visible) with both ids per SPEC Risks.
+            // failed. Logged at ERROR (Sentry-visible) with both ids (runbook: OPERATIONS.md).
             log.error("COMPENSATION FAILED — orphaned auth-service client "
                     + "(clientId={}, deviceName={}); manual reconciliation required",
                     name, name, ce);

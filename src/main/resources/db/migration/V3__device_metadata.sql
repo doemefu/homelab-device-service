@@ -1,4 +1,4 @@
--- Device registration metadata (SPEC-device-registration §5).
+-- Device registration metadata (#62; contract: README "Device registration").
 -- provisioned = TRUE means the device was created via the admin POST /devices
 -- API; auto-created (first-MQTT-message) rows keep provisioned = FALSE.
 ALTER TABLE devices

@@ -1,5 +1,6 @@
 package ch.furchert.homelab.device.client;
 
+import ch.furchert.homelab.device.config.AuthServiceClientConfig;
 import ch.furchert.homelab.device.dto.AuthClientCreated;
 import ch.furchert.homelab.device.exception.DeviceAlreadyExistsException;
 import com.github.tomakehurst.wiremock.junit5.WireMockRuntimeInfo;
@@ -16,7 +17,10 @@ import org.springframework.security.oauth2.client.registration.InMemoryClientReg
 import org.springframework.security.oauth2.client.web.client.OAuth2ClientHttpRequestInterceptor;
 import org.springframework.security.oauth2.client.web.client.RequestAttributePrincipalResolver;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+
+import java.time.Duration;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,6 +33,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 @WireMockTest
 class AuthServiceClientTest {
+
+    private static final Duration READ_TIMEOUT = Duration.ofMillis(500);
 
     private AuthServiceClient client;
 
@@ -59,6 +65,7 @@ class AuthServiceClientTest {
 
         RestClient restClient = RestClient.builder()
                 .baseUrl(baseUrl)
+                .requestFactory(AuthServiceClientConfig.requestFactory(Duration.ofSeconds(2), READ_TIMEOUT))
                 .requestInterceptor(interceptor)
                 .build();
         client = new AuthServiceClientImpl(restClient);
@@ -114,5 +121,16 @@ class AuthServiceClientTest {
 
         verify(deleteRequestedFor(urlEqualTo("/api/v1/clients/terra3"))
                 .withHeader("Authorization", equalTo("Bearer test-access-token")));
+    }
+
+    @Test
+    void createDeviceClient_slowAuthService_failsWithReadTimeout() {
+        stubToken();
+        stubFor(post(urlEqualTo("/api/v1/clients")).willReturn(aResponse()
+                .withStatus(201)
+                .withFixedDelay((int) READ_TIMEOUT.multipliedBy(4).toMillis())));
+
+        assertThatThrownBy(() -> client.createDeviceClient("terra3", "d"))
+                .isInstanceOf(ResourceAccessException.class);
     }
 }

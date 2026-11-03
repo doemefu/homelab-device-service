@@ -209,11 +209,21 @@ Every method other than GET under `/devices/**` (device control, registration, d
    ```
    `COMPENSATION FAILED — orphaned auth-service client` means an auth-service
    client exists with no local row. Reconcile manually via the auth-service
-   admin API (`DELETE /api/v1/clients/{clientId}`).
+   admin API (`DELETE /api/v1/clients/{clientId}`). `Outcome of auth-service
+   client creation ... is unknown` (timeout, reset) is followed by the same
+   compensation; retry the registration once auth-service is healthy.
 4. Token/connectivity errors calling auth-service: verify `AUTH_SERVICE_BASE_URL`
    and that the `device-service` client has the `client_credentials` grant +
    `clients:admin` scope in auth-service (auth-service `INTERFACES.md` §8).
-5. A device deleted locally but still able to obtain tokens: deletion revokes
+   auth-service seeds clients only once (existing rows are skipped), so check the
+   live row, not `application.yaml` (reads no secret column):
+   ```bash
+   kubectl -n apps exec postgresql-0 -c postgresql -- psql -U postgres -d homelabdb -tAc "SELECT client_id, authorization_grant_types, scopes FROM oauth2_registered_client WHERE client_id = 'device-service'"
+   ```
+5. Deleting a device that was auto-created from its first MQTT message
+   (`provisioned = false`) revokes nothing in auth-service (it has no client),
+   and the row comes back with the device's next MQTT message.
+6. A device deleted locally but still able to obtain tokens: deletion revokes
    the client immediately, but already-issued device JWTs stay valid until
    their `exp` (≤1 h) — this is expected (auth-service `INTERFACES.md` §8).
 
