@@ -147,6 +147,15 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void list_withoutDevice_returnsAllOrderedById() {
+        when(scheduleRepository.findAllByOrderByIdAsc()).thenReturn(List.of());
+
+        assertThat(service.list(null)).isEmpty();
+
+        verify(scheduleRepository, never()).findByDeviceNameOrderByIdAsc(any());
+    }
+
+    @Test
     void list_filtersByDeviceWhenGiven() {
         when(scheduleRepository.findByDeviceNameOrderByIdAsc("terra2")).thenReturn(List.of());
 

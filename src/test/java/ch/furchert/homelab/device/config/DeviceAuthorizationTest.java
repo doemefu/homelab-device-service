@@ -2,6 +2,7 @@ package ch.furchert.homelab.device.config;
 
 import ch.furchert.homelab.device.controller.DeviceController;
 import ch.furchert.homelab.device.controller.ScheduleController;
+import ch.furchert.homelab.device.dto.ScheduleDto;
 import ch.furchert.homelab.device.service.DeviceRegistrationService;
 import ch.furchert.homelab.device.service.DeviceService;
 import ch.furchert.homelab.device.service.MqttClientService;
@@ -188,11 +189,15 @@ class DeviceAuthorizationTest {
 
     @Test
     void scheduleCreate_withAdminRole_reachesController() throws Exception {
+        when(scheduleService.create(any())).thenReturn(new ScheduleDto(
+                1L, "terra1", "light", 1, "{\"LightState\":1}", "0 0 8 * * *", true, null));
+
         mockMvc.perform(post("/schedules")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken("ADMIN"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"deviceName\":\"terra1\",\"field\":\"light\",\"state\":1,"
-                                + "\"cronExpression\":\"0 0 8 * * *\",\"active\":true}"));
+                                + "\"cronExpression\":\"0 0 8 * * *\",\"active\":true}"))
+                .andExpect(status().isCreated());
 
         verify(scheduleService).create(any());
     }

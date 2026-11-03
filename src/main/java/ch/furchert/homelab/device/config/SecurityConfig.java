@@ -72,8 +72,8 @@ public class SecurityConfig {
 
     /**
      * Chain 2 (order 2): stateless resource server for REST API, WebSocket, actuator.
-     * Reads under {@code /devices/**} need any valid access token; every other method there
-     * (device control, and future writes) needs role ADMIN (#81).
+     * Reads under {@code /devices/**} and {@code /schedules/**} need any valid access token; every
+     * other method there (device control, registration, schedule writes) needs role ADMIN (#81, #41).
      * This chain handles all requests NOT matched by Chain 1.
      */
     @Bean
@@ -96,7 +96,7 @@ public class SecurityConfig {
                 // WebSocket upgrade stays open: browsers cannot send a bearer token on it.
                 // The JWT is checked on the STOMP CONNECT frame (StompAuthChannelInterceptor).
                 .requestMatchers("/ws/**").permitAll()
-                // Reads stay open to any valid access token; writes (control) are ADMIN-only (#81)
+                // Reads stay open to any valid access token; writes are ADMIN-only (#81, #41)
                 .requestMatchers(HttpMethod.GET, "/devices/**", "/schedules/**").authenticated()
                 .requestMatchers("/devices/**", "/schedules/**").hasRole("ADMIN")
                 // Everything else requires a valid JWT

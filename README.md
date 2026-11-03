@@ -123,7 +123,7 @@ Response body:
 ```
 
 `state` is `null` when a stored payload does not have the standard `{"<Field>State": n}` shape; `nextRun` is `null`
-for an inactive schedule. Writes take effect in the scheduler immediately; the periodic reload
+for an inactive schedule or when a stored cron expression cannot be evaluated. Writes take effect in the scheduler immediately; the periodic reload
 (`app.scheduler.poll-interval`) only covers out-of-band database edits.
 
 Errors: validation failures and unknown devices return `400 {"error": "Validation failed", "details": ["<field>: <message>"]}`;

@@ -96,6 +96,15 @@ class ScheduleControllerTest {
     }
 
     @Test
+    void get_knownId_returnsSchedule() throws Exception {
+        when(scheduleService.get(5L)).thenReturn(DTO);
+
+        mockMvc.perform(get("/schedules/5").with(user()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cronExpression").value("0 0 8 * * *"));
+    }
+
+    @Test
     void get_unknownId_returns404() throws Exception {
         when(scheduleService.get(9L)).thenThrow(new ScheduleNotFoundException(9L));
 
