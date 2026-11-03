@@ -10,7 +10,9 @@
 
 **Deploying a new version:** Push to `main`. CI builds a new image with a `main-YYYYMMDDTHHmmss` tag. Flux detects it within 5 min, commits the updated tag to `k8s/deployment.yaml` in this repo, and the `Kustomization` applies the change to the cluster automatically.
 
-**Pod security context (#85):** pod-level `runAsNonRoot` with numeric `runAsUser: 100` / `runAsGroup: 101` (the ids of the image's `appuser`; re-check them when the base image changes), `seccompProfile: RuntimeDefault`; container-level `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]`. `/tmp` (a 64Mi disk-backed `emptyDir`) is the only writable path: Tomcat's work dir and `java.io.tmpdir` live there, and without it startup fails with `Unable to create tempDir`. Paho uses `MemoryPersistence`, InfluxDB writes are blocking without a disk buffer, and logs go to stdout. A new feature that writes elsewhere needs its own `emptyDir`. After merging a change to the security context, check `kubectl -n apps rollout status deploy/device-service --timeout=400s`; a stalled rollout means revert (the old pod keeps serving meanwhile).
+**Rollout strategy (#67):** `RollingUpdate` with `maxSurge: 0` / `maxUnavailable: 1`, so the old pod starts terminating before the new one is created. This avoids an overlap in practice (the old pod drops MQTT within milliseconds of SIGTERM, the new one connects about 20 s after start) but does not guarantee it, because Kubernetes does not wait for the old process to exit. Two running pods would share the MQTT client id `device-service` (the broker drops one session, both auto-reconnect and take it from each other) and run two schedulers. Every rollout is therefore downtime for its startup time: typically about 45 to 95 s, more than 150 s under CPU contention (#60). `type: Recreate` would be equivalent but fails Flux's server-side apply (the API server's defaulted `rollingUpdate` block stays and is rejected together with `Recreate`).
+
+**Pod security context (#85):** pod-level `runAsNonRoot` with numeric `runAsUser: 100` / `runAsGroup: 101` (the ids of the image's `appuser`; re-check them when the base image changes), `seccompProfile: RuntimeDefault`; container-level `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]`. `/tmp` (a 64Mi disk-backed `emptyDir`) is the only writable path: Tomcat's work dir and `java.io.tmpdir` live there, and without it startup fails with `Unable to create tempDir`. Paho uses `MemoryPersistence`, InfluxDB writes are blocking without a disk buffer, and logs go to stdout. A new feature that writes elsewhere needs its own `emptyDir`. After merging a change to the security context, check `kubectl -n apps rollout status deploy/device-service --timeout=400s`; a stalled rollout means device-service is down until it is reverted (there is no old pod serving: see "Rollout strategy" above). If the new image is the cause, suspend the image automation first (`flux suspend image update device-service -n flux-system`), then commit the last known-good tag to `k8s/deployment.yaml` (or revert the PR, so CI builds a fixed image) and resume the automation only once the image policy selects a good tag; otherwise Flux selects the broken tag again. A broken manifest change is reverted in git; `kubectl rollout undo` does not stick, because Flux reapplies the manifest at its next reconcile.
 
 **Checking status:**
 ```bash
@@ -27,7 +29,9 @@ flux reconcile kustomization device-service -n flux-system --with-source
 **Suspending automation** (e.g. for an emergency image pin):
 ```bash
 flux suspend image update device-service -n flux-system
-# Update image tag manually in k8s/deployment.yaml if needed, then:
+# Commit and push the known-good tag to k8s/deployment.yaml while the automation stays suspended.
+# Resume only once the image policy selects a good tag (a fixed image is built), otherwise
+# Flux rewrites the tag to the broken image again:
 flux resume image update device-service -n flux-system
 ```
 
