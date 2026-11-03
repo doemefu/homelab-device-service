@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JwtAuthenticationConverterTest {
 
     private final JwtAuthenticationConverter converter =
-            new SecurityConfig().jwtAuthenticationConverter();
+            SecurityConfig.jwtAuthenticationConverter();
 
     private Jwt jwt(String claimName, Object value) {
         return Jwt.withTokenValue("t")
