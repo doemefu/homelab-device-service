@@ -11,6 +11,7 @@ import ch.furchert.homelab.device.repository.DeviceRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientResponseException;
@@ -54,8 +55,9 @@ public class DeviceRegistrationService {
         AuthClientCreated created;
         try {
             created = authServiceClient.createDeviceClient(name, req.description());
-        } catch (DeviceAlreadyExistsException | RestClientResponseException e) {
-            // auth-service answered with an error status. A 4xx created nothing; a 5xx after its
+        } catch (DeviceAlreadyExistsException | RestClientResponseException | OAuth2AuthorizationException e) {
+            // auth-service answered with an error status, or the token request failed before the
+            // admin request was sent. A 4xx or a token failure created nothing; a 5xx after its
             // commit may leave a client that a retry reports as 409 (OPERATIONS.md runbook).
             // Deleting by name is not safe here: the client may belong to a concurrent request.
             throw e;

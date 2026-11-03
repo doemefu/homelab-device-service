@@ -15,6 +15,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
@@ -153,6 +155,19 @@ class DeviceRegistrationServiceTest {
         when(authServiceClient.createDeviceClient(any(), any())).thenThrow(forbidden);
 
         assertThatThrownBy(() -> service.register(req())).isSameAs(forbidden);
+
+        verify(authServiceClient, never()).deleteDeviceClient(any());
+    }
+
+    @Test
+    void register_tokenRequestFails_doesNotCompensate() {
+        // The interceptor fetches the token before it sends the admin request, so no client exists.
+        when(deviceRepository.existsByName("terra3")).thenReturn(false);
+        OAuth2AuthorizationException tokenFailure =
+                new OAuth2AuthorizationException(new OAuth2Error("invalid_token_response"));
+        when(authServiceClient.createDeviceClient(any(), any())).thenThrow(tokenFailure);
+
+        assertThatThrownBy(() -> service.register(req())).isSameAs(tokenFailure);
 
         verify(authServiceClient, never()).deleteDeviceClient(any());
     }
