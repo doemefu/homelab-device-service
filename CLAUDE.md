@@ -45,7 +45,7 @@ Part of the homelab IoT ecosystem alongside auth-service (OIDC IdP, issues the J
 | influxdb-client-java | 8.0.0 |
 | springdoc-openapi | 3.1.1 |
 | Testcontainers | 1.21.4 (core `testcontainers` artifact: 2.0.5) |
-| Base image | `eclipse-temurin:25-jre-alpine@sha256:3c0a9084927a221ccd1d007fcaf614465672c0af37aaa834c5184483afe56d61` (build: `25-jdk-alpine@sha256:3fd2d245c4e0eba615fe366a71b8bd25f5db7104f53e4026b24bf508b880bd2a`); runtime strips the emSign roots from cacerts (temporary, homelab#212) |
+| Base image | `eclipse-temurin:25-jre-alpine@sha256:56f273059de6b13a6b49fe0ded691ed2d0399bbee76156a8f2d385f7524a3d43` (build: `25-jdk-alpine@sha256:425f0b733cb23843bd78dbe5552513976d0cf12b9722752c48a5161cf5cd2f32`), Temurin 25.0.5+8 |
 
 ## Spring Boot 4.x Notes
 
