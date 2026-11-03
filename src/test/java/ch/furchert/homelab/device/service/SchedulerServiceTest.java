@@ -14,6 +14,12 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ScheduledFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -256,5 +262,48 @@ class SchedulerServiceTest {
 
         assertThat(activeTasks()).doesNotContainKey(1L);
         assertThat(taskFingerprints()).doesNotContainKey(1L);
+    }
+
+    @Test
+    void reloadSchedules_concurrentCalls_registerEachScheduleOnce() throws Exception {
+        // #75: two callers (periodic reload + a future REST write, #41) must not both see the
+        // schedule as missing; a second registration would orphan the first ScheduledFuture.
+        Schedule schedule = buildSchedule(1L, "light", "0 0 8 * * *");
+        // Counts callers that got past the method entry (a serialized method lets only one in).
+        CountDownLatch bothEntered = new CountDownLatch(2);
+        when(scheduleRepository.findByActiveTrue()).thenAnswer(invocation -> {
+            bothEntered.countDown();
+            return List.of(schedule);
+        });
+        CountDownLatch bothRegistering = new CountDownLatch(2);
+        AtomicInteger registrations = new AtomicInteger();
+        when(taskScheduler.schedule(any(Runnable.class), any(CronTrigger.class))).thenAnswer(invocation -> {
+            registrations.incrementAndGet();
+            bothRegistering.countDown();
+            // Hold the first registration open until the other caller has entered the method,
+            // however late its thread starts; unserialized, it then also finds the schedule
+            // missing and registers too. Serialized, it cannot enter and the wait times out.
+            if (bothEntered.await(2, TimeUnit.SECONDS)) {
+                bothRegistering.await(2, TimeUnit.SECONDS);
+            }
+            return mock(ScheduledFuture.class);
+        });
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<?>> calls = List.of(
+                    pool.submit(() -> { start.await(); schedulerService.reloadSchedules(); return null; }),
+                    pool.submit(() -> { start.await(); schedulerService.reloadSchedules(); return null; }));
+            start.countDown();
+            for (Future<?> call : calls) {
+                call.get(5, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(registrations.get()).as("CronTrigger registrations for schedule 1").isEqualTo(1);
+        assertThat(activeTasks()).containsOnlyKeys(1L);
     }
 }

@@ -70,9 +70,14 @@ public class SchedulerService {
      *
      * <p>Runs every {@code app.scheduler.poll-interval} milliseconds (fixed delay).
      * The first execution after startup is triggered by {@link #init()}.
+     *
+     * <p>{@code synchronized}: the cancel and register steps are check-then-act on
+     * {@code activeTasks}; two concurrent callers could otherwise both register the same
+     * schedule and orphan one {@link ScheduledFuture}, which nothing could cancel (#75). The
+     * method runs once per poll interval, so the lock is uncontended in practice.
      */
     @Scheduled(fixedDelayString = "${app.scheduler.poll-interval}")
-    public void reloadSchedules() {
+    public synchronized void reloadSchedules() {
         List<Schedule> current = scheduleRepository.findByActiveTrue();
         Map<Long, Schedule> currentMap = current.stream()
                 .collect(Collectors.toMap(Schedule::getId, s -> s));
