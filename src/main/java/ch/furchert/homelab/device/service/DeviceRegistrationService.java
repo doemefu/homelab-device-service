@@ -55,7 +55,9 @@ public class DeviceRegistrationService {
         try {
             created = authServiceClient.createDeviceClient(name, req.description());
         } catch (DeviceAlreadyExistsException | RestClientResponseException e) {
-            // auth-service answered with an error status: no client was created.
+            // auth-service answered with an error status. A 4xx created nothing; a 5xx after its
+            // commit may leave a client that a retry reports as 409 (OPERATIONS.md runbook).
+            // Deleting by name is not safe here: the client may belong to a concurrent request.
             throw e;
         } catch (RuntimeException e) {
             // Timeout, reset or unreadable response: the client may exist. Deleting is safe
