@@ -269,15 +269,23 @@ class SchedulerServiceTest {
         // #75: two callers (periodic reload + a future REST write, #41) must not both see the
         // schedule as missing; a second registration would orphan the first ScheduledFuture.
         Schedule schedule = buildSchedule(1L, "light", "0 0 8 * * *");
-        when(scheduleRepository.findByActiveTrue()).thenReturn(List.of(schedule));
-        CountDownLatch bothInside = new CountDownLatch(2);
+        // Counts callers that got past the method entry (a serialized method lets only one in).
+        CountDownLatch bothEntered = new CountDownLatch(2);
+        when(scheduleRepository.findByActiveTrue()).thenAnswer(invocation -> {
+            bothEntered.countDown();
+            return List.of(schedule);
+        });
+        CountDownLatch bothRegistering = new CountDownLatch(2);
         AtomicInteger registrations = new AtomicInteger();
         when(taskScheduler.schedule(any(Runnable.class), any(CronTrigger.class))).thenAnswer(invocation -> {
             registrations.incrementAndGet();
-            bothInside.countDown();
-            // Widen the check-then-act window: wait until the other caller arrives (or time out
-            // when the method is serialized and it cannot).
-            bothInside.await(300, TimeUnit.MILLISECONDS);
+            bothRegistering.countDown();
+            // Hold the first registration open until the other caller has entered the method,
+            // however late its thread starts; unserialized, it then also finds the schedule
+            // missing and registers too. Serialized, it cannot enter and the wait times out.
+            if (bothEntered.await(2, TimeUnit.SECONDS)) {
+                bothRegistering.await(2, TimeUnit.SECONDS);
+            }
             return mock(ScheduledFuture.class);
         });
 
