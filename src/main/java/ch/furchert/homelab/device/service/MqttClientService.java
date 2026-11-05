@@ -157,7 +157,9 @@ public class MqttClientService implements MqttCallbackExtended {
             if (attempt > 1) {
                 log.info("MQTT connect succeeded on attempt {}", attempt);
             }
-        } catch (MqttException e) {
+        } catch (MqttException | RuntimeException e) {
+            // RuntimeException too: on the retry thread it would otherwise end the retries
+            // silently, because a scheduled task swallows what it throws.
             if (shuttingDown) {
                 return;
             }
@@ -165,10 +167,11 @@ public class MqttClientService implements MqttCallbackExtended {
             if (attempt == 1) {
                 // ERROR once per outage (a Sentry event); the retries below log at WARN.
                 log.error("Failed to connect to MQTT broker: {}; retrying in {} ms",
-                        e.getMessage(), delay.toMillis(), e);
+                        e, delay.toMillis(), e);
             } else {
+                // toString(): reason code and cause (e.g. "Connection refused") without a stack trace
                 log.warn("MQTT connect attempt {} failed: {}; retrying in {} ms",
-                        attempt, e.getMessage(), delay.toMillis());
+                        attempt, e.toString(), delay.toMillis());
             }
             try {
                 connectRetryExecutor.schedule(() -> attemptConnect(attempt + 1),

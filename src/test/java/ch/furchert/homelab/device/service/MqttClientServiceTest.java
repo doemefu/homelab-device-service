@@ -151,6 +151,23 @@ class MqttClientServiceTest {
     }
 
     @Test
+    void connect_retryThrowsUnexpectedRuntimeException_keepsRetrying() throws Exception {
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class,
+                (mock, ctx) -> doThrow(new MqttException(MqttException.REASON_CODE_SERVER_CONNECT_ERROR))
+                        .doThrow(new IllegalStateException("unexpected"))
+                        .doNothing()
+                        .when(mock).connect(any()))) {
+            service.connect();
+
+            // An exception other than MqttException on the retry thread must not end the retries
+            // silently (a scheduled task swallows it).
+            MqttClient client = mocked.constructed().get(0);
+            Awaitility.await().atMost(5, TimeUnit.SECONDS)
+                    .untilAsserted(() -> verify(client, times(3)).connect(any()));
+        }
+    }
+
+    @Test
     void connect_firstAttemptSucceeds_schedulesNoRetry() throws Exception {
         try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class)) {
             service.connect();
