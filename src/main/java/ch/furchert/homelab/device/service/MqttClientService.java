@@ -14,6 +14,7 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
@@ -50,8 +51,17 @@ public class MqttClientService implements MqttCallbackExtended {
     @Autowired
     public MqttClientService(MqttProperties props,
                               @Lazy MqttMessageHandler messageHandler) {
+        this(props, messageHandler, Duration.ofSeconds(1), Duration.ofSeconds(60));
+    }
+
+    MqttClientService(MqttProperties props, MqttMessageHandler messageHandler,
+                      Duration connectRetryInitialDelay, Duration connectRetryMaxDelay) {
         this.props = props;
         this.messageHandler = messageHandler;
+    }
+
+    Duration retryDelay(int failedAttempts) {
+        return Duration.ZERO; // TDD stub
     }
 
     // -------------------------------------------------------------------------

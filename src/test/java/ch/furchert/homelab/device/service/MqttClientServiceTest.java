@@ -1,10 +1,12 @@
 package ch.furchert.homelab.device.service;
 
 import ch.furchert.homelab.device.config.MqttProperties;
+import org.awaitility.Awaitility;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,11 +17,15 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -31,6 +37,12 @@ import static org.mockito.Mockito.*;
  */
 @ExtendWith(MockitoExtension.class)
 class MqttClientServiceTest {
+
+    private static final Duration RETRY_INITIAL_DELAY = Duration.ofMillis(10);
+    private static final Duration RETRY_MAX_DELAY = Duration.ofMillis(50);
+
+    /** Long enough for several retries at {@link #RETRY_MAX_DELAY} if any were still scheduled. */
+    private static final long QUIET_PERIOD_MS = 300;
 
     @Mock
     private MqttProperties props;
@@ -50,7 +62,14 @@ class MqttClientServiceTest {
         lenient().when(props.getWillTopic()).thenReturn("javaBackend/mqtt/status");
         lenient().when(props.getWillPayload()).thenReturn("{\"MqttState\": 0}");
 
-        service = new MqttClientService(props, messageHandler);
+        // Short retry delays keep the connect-retry tests fast; production uses 1 s .. 60 s.
+        service = new MqttClientService(props, messageHandler, RETRY_INITIAL_DELAY, RETRY_MAX_DELAY);
+    }
+
+    @AfterEach
+    void tearDown() {
+        // Stops any connect retry a test left scheduled, so no retry thread outlives the test.
+        service.disconnect();
     }
 
     // -------------------------------------------------------------------------
@@ -108,6 +127,71 @@ class MqttClientServiceTest {
     }
 
     // -------------------------------------------------------------------------
+    // connect() — retry after a failed first attempt (#114)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void connect_firstAttemptFails_retriesOnSameClientUntilConnected() throws Exception {
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class,
+                (mock, ctx) -> doThrow(new MqttException(MqttException.REASON_CODE_SERVER_CONNECT_ERROR))
+                        .doThrow(new MqttException(MqttException.REASON_CODE_SERVER_CONNECT_ERROR))
+                        .doNothing()
+                        .when(mock).connect(any()))) {
+            service.connect();
+
+            MqttClient client = mocked.constructed().get(0);
+            Awaitility.await().atMost(5, TimeUnit.SECONDS)
+                    .untilAsserted(() -> verify(client, times(3)).connect(any()));
+
+            // The first success ends the retries; Paho's automatic reconnect takes over from here.
+            Thread.sleep(QUIET_PERIOD_MS);
+            verify(client, times(3)).connect(any());
+            assertThat(mocked.constructed()).as("retries reuse the one client").hasSize(1);
+        }
+    }
+
+    @Test
+    void connect_firstAttemptSucceeds_schedulesNoRetry() throws Exception {
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class)) {
+            service.connect();
+
+            Thread.sleep(QUIET_PERIOD_MS);
+            verify(mocked.constructed().get(0), times(1)).connect(any());
+        }
+    }
+
+    @Test
+    void disconnect_whileRetrying_stopsFurtherAttemptsAndClosesClient() throws Exception {
+        AtomicInteger attempts = new AtomicInteger();
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class,
+                (mock, ctx) -> doAnswer(inv -> {
+                    attempts.incrementAndGet();
+                    throw new MqttException(MqttException.REASON_CODE_SERVER_CONNECT_ERROR);
+                }).when(mock).connect(any()))) {
+            service.connect();
+            Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() -> attempts.get() >= 3);
+
+            service.disconnect();
+            int attemptsAtShutdown = attempts.get();
+
+            Thread.sleep(QUIET_PERIOD_MS);
+            assertThat(attempts.get()).as("no connect attempt after shutdown").isEqualTo(attemptsAtShutdown);
+            verify(mocked.constructed().get(0), atLeastOnce()).close();
+        }
+    }
+
+    @Test
+    void retryDelay_doublesFromInitialDelayAndCapsAtMaxDelay() {
+        MqttClientService withDefaults = new MqttClientService(props, messageHandler);
+
+        assertThat(List.of(1, 2, 3, 4, 5, 6, 7, 8).stream().map(withDefaults::retryDelay).toList())
+                .containsExactly(Duration.ofSeconds(1), Duration.ofSeconds(2), Duration.ofSeconds(4),
+                        Duration.ofSeconds(8), Duration.ofSeconds(16), Duration.ofSeconds(32),
+                        Duration.ofSeconds(60), Duration.ofSeconds(60));
+        assertThat(withDefaults.retryDelay(Integer.MAX_VALUE)).isEqualTo(Duration.ofSeconds(60));
+    }
+
+    // -------------------------------------------------------------------------
     // connectComplete() — called by broker after (re-)connect
     // -------------------------------------------------------------------------
 
@@ -152,6 +236,21 @@ class MqttClientServiceTest {
             MqttClient client = mocked.constructed().get(0);
             verify(client).subscribe("terra1/#", 1);
             verify(client).subscribe("terra2/#", 1);
+        }
+    }
+
+    @Test
+    void connectComplete_afterShutdownStarted_doesNotSubscribeOrPublish() throws Exception {
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class)) {
+            service.connect();
+            service.disconnect();
+            // A connect that completes while the service shuts down must not re-announce "online"
+            // after disconnect() published the offline status.
+            service.connectComplete(false, "tcp://localhost:1883");
+
+            MqttClient client = mocked.constructed().get(0);
+            verify(client, never()).subscribe(any(String.class), anyInt());
+            verify(client, never()).publish(any(String.class), any(MqttMessage.class));
         }
     }
 
