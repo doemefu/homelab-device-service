@@ -16,7 +16,7 @@ kubectl -n apps logs deployment/device-service --tail=50
 
 > **Note:** Do not use `kubectl rollout restart`. Flux reconciles this Deployment and strips the `restartedAt` annotation at its next reconcile (at most 10 min), so the restart can be cancelled before the new pod is Ready while `rollout status` still reports success, or the pod restarts twice. See infrastructure `DEPLOYMENT.md`, note under "Enable order (NM-4)". Check the pod age and the startup log, not `rollout status`.
 >
-> The service is unavailable for its startup time, typically about 45 to 95 s (single replica: REST, WebSocket and MQTT). The same applies to every Flux rollout, because a rollout does not start the new pod next to the running old one (`maxSurge: 0`, see "MQTT reconnection behavior"). The new pod connects to the broker at startup and re-registers scheduled tasks from the database. If the broker is unreachable at startup, the pod still starts and becomes Ready (REST and WebSocket work; the probes do not cover MQTT), logs `Failed to connect to MQTT broker: ...; retrying in 1000 ms` once, and keeps retrying in the background: 1 s, doubling, at most every 60 s, each failure as a WARN `MQTT connect attempt N failed`. Once the broker is back it logs `MQTT connect succeeded on attempt N` and `Connected to MQTT broker`; no restart is needed (#114). After that first success, `setAutomaticReconnect(true)` handles broker or network drops.
+> The service is unavailable for its startup time, typically about 45 to 95 s (single replica: REST, WebSocket and MQTT). The same applies to every Flux rollout, because a rollout does not start the new pod next to the running old one (`maxSurge: 0`, see "MQTT reconnection behavior"). The new pod connects to the broker at startup and re-registers scheduled tasks from the database. If the broker is unreachable at startup, the pod still starts and becomes Ready (REST and WebSocket work; the probes do not cover MQTT), logs `Failed to connect to MQTT broker: ...; retrying in 1000 ms` once, and keeps retrying in the background: 1 s, doubling, at most every 60 s, each failure as a WARN `MQTT connect attempt N failed`. Once the broker is back it logs `Connected to MQTT broker` and `MQTT connect succeeded on attempt N` (two threads, either order); no restart is needed (#114). After that first success, `setAutomaticReconnect(true)` handles broker or network drops.
 
 ### View logs
 
@@ -41,6 +41,10 @@ Expected on healthy startup:
 
 ### MQTT reconnection behavior
 
+- Two retry mechanisms, never active at the same time:
+  - **Startup retry (service):** if the first connect after pod start fails, the service retries on the same client: 1 s, doubling, at most every 60 s. It stops at the first success. Logs: `Failed to connect to MQTT broker: ...; retrying in ...` (ERROR, once), then `MQTT connect attempt N failed` (WARN) per retry.
+  - **Automatic reconnect (Paho):** after a connection that succeeded once is lost: 1 s, doubling, at most every 128 s (Paho default). Logs: `MQTT connection lost`, then `Reconnected to MQTT broker`; failed reconnect attempts are not logged.
+- **Stuck startup retry:** the broker is up, but the last MQTT line of the pod is a `retrying in` WARN (or the ERROR) and nothing follows for well over 60 s. A broker that accepts TCP but never answers the MQTT `CONNECT` blocks an attempt indefinitely, because Paho 1.2.5 has no CONNACK timeout. Restart the pod (see "Restart device-service").
 - Eclipse Paho auto-reconnect is enabled (`setAutomaticReconnect(true)`)
 - On reconnect, subscriptions are re-established via `MqttCallbackExtended.connectComplete()`
 - LWT (`javaBackend/mqtt/status` with `{"MqttState": 0}`) is published by the broker when the client disconnects ungracefully
@@ -50,7 +54,7 @@ Expected on healthy startup:
 
 If Mosquitto is restarted or unavailable:
 1. device-service logs will show connection errors
-2. The service retries automatically with exponential backoff: Paho's automatic reconnect after a lost connection (`MQTT connection lost`, then `Reconnected`), or the service's own startup retry if the pod started while the broker was down (`MQTT connect attempt N failed`, at most every 60 s, see "Restart device-service")
+2. The service retries automatically with exponential backoff: Paho's automatic reconnect after a lost connection (`MQTT connection lost`, then `Reconnected`, at most every 128 s), or the service's own startup retry if the pod started while the broker was down (`MQTT connect attempt N failed`, at most every 60 s); see "MQTT reconnection behavior"
 3. No manual intervention needed — wait for Mosquitto to come back
 4. Verify recovery: `kubectl logs -n apps deployment/device-service | tail -20`
 

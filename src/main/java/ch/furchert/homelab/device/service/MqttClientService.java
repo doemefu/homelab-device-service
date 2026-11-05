@@ -43,16 +43,21 @@ public class MqttClientService implements MqttCallbackExtended {
     private static final String ONLINE_PAYLOAD = "{\"MqttState\": 1}";
     private static final String OFFLINE_PAYLOAD = "{\"MqttState\": 0}";
 
-    /** Paho TCP connect timeout per attempt. */
+    /**
+     * Paho TCP connect timeout. With MQTT 3.1.1 pinned an attempt makes one TCP connect, so this
+     * bounds an attempt against an unreachable broker (DNS resolution and a broker that accepts
+     * TCP but never sends CONNACK are not covered: Paho 1.2.5 has no CONNACK timeout).
+     */
     private static final int CONNECTION_TIMEOUT_SECONDS = 10;
 
-    /** How long shutdown waits for an in-flight connect retry before interrupting it. */
-    private static final long RETRY_SHUTDOWN_WAIT_SECONDS = CONNECTION_TIMEOUT_SECONDS + 2;
 
     private final MqttProperties props;
     private final MqttMessageHandler messageHandler;
     private final Duration connectRetryInitialDelay;
     private final Duration connectRetryMaxDelay;
+
+    /** How long shutdown waits for a running connect attempt before interrupting it. */
+    private final Duration connectRetryShutdownWait;
 
     /**
      * Runs the connect retries after a failed first connect. One daemon thread, created only
@@ -72,16 +77,22 @@ public class MqttClientService implements MqttCallbackExtended {
     @Autowired
     public MqttClientService(MqttProperties props,
                               @Lazy MqttMessageHandler messageHandler) {
-        this(props, messageHandler, Duration.ofSeconds(1), Duration.ofSeconds(60));
+        this(props, messageHandler, Duration.ofSeconds(1), Duration.ofSeconds(60),
+                Duration.ofSeconds(CONNECTION_TIMEOUT_SECONDS + 2));
     }
 
-    /** Test seam for the connect-retry backoff; production uses 1 s doubling up to 60 s. */
+    /**
+     * Test seam for the connect-retry timing. Production: 1 s doubling up to 60 s, and shutdown
+     * waits one connect timeout plus 2 s for a running attempt.
+     */
     MqttClientService(MqttProperties props, MqttMessageHandler messageHandler,
-                      Duration connectRetryInitialDelay, Duration connectRetryMaxDelay) {
+                      Duration connectRetryInitialDelay, Duration connectRetryMaxDelay,
+                      Duration connectRetryShutdownWait) {
         this.props = props;
         this.messageHandler = messageHandler;
         this.connectRetryInitialDelay = connectRetryInitialDelay;
         this.connectRetryMaxDelay = connectRetryMaxDelay;
+        this.connectRetryShutdownWait = connectRetryShutdownWait;
         this.connectRetryExecutor = new ScheduledThreadPoolExecutor(1, runnable -> {
             Thread thread = new Thread(runnable, "mqtt-connect-retry");
             thread.setDaemon(true);
@@ -110,6 +121,9 @@ public class MqttClientService implements MqttCallbackExtended {
             opts.setCleanSession(true);
             opts.setKeepAliveInterval(30);
             opts.setConnectionTimeout(CONNECTION_TIMEOUT_SECONDS);
+            // Pinned instead of Paho's default, which retries a failed 3.1.1 connect as 3.1 with a
+            // second TCP connect and so doubles the time an attempt can take. Mosquitto 2 speaks 3.1.1.
+            opts.setMqttVersion(MqttConnectOptions.MQTT_VERSION_3_1_1);
             if (props.getUsername() != null && !props.getUsername().isBlank()) {
                 opts.setUserName(props.getUsername());
             }
@@ -197,14 +211,17 @@ public class MqttClientService implements MqttCallbackExtended {
 
     /**
      * Stops pending connect retries, then publishes offline status and disconnects the MQTT
-     * client cleanly. An attempt that is already running may finish first, so a connection it
-     * opens is closed here rather than outliving the shutdown.
+     * client cleanly. A connect attempt that is already running may finish first, so a connection
+     * it opens is closed here as well. One that is still running after the shutdown wait is
+     * interrupted, and the client is left to the JVM exit: Paho keeps connecting in the
+     * background, so {@code close()} would fail, and a session it still opens ends with the
+     * process (the broker then publishes the LWT).
      */
     @PreDestroy
     public void disconnect() {
         shuttingDown = true;
-        stopConnectRetries();
-        if (client == null) {
+        boolean attemptStillRunning = !stopConnectRetries();
+        if (client == null || attemptStillRunning) {
             return;
         }
         try {
@@ -219,18 +236,24 @@ public class MqttClientService implements MqttCallbackExtended {
         }
     }
 
-    private void stopConnectRetries() {
+    /**
+     * Drops pending retries and waits for a running attempt.
+     *
+     * @return {@code true} if no attempt is running any more
+     */
+    private boolean stopConnectRetries() {
         connectRetryExecutor.shutdown();
         try {
-            if (!connectRetryExecutor.awaitTermination(RETRY_SHUTDOWN_WAIT_SECONDS, TimeUnit.SECONDS)) {
-                log.warn("MQTT connect attempt still running after {} s; interrupting it",
-                        RETRY_SHUTDOWN_WAIT_SECONDS);
-                connectRetryExecutor.shutdownNow();
+            if (connectRetryExecutor.awaitTermination(connectRetryShutdownWait.toMillis(), TimeUnit.MILLISECONDS)) {
+                return true;
             }
+            log.warn("MQTT connect attempt still running after {} ms; interrupting it and "
+                    + "skipping the MQTT disconnect", connectRetryShutdownWait.toMillis());
         } catch (InterruptedException e) {
-            connectRetryExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+        connectRetryExecutor.shutdownNow();
+        return false;
     }
 
     // -------------------------------------------------------------------------
@@ -258,7 +281,11 @@ public class MqttClientService implements MqttCallbackExtended {
         // Subscribe and publish status for both initial connect and reconnect.
         // This is the single authoritative code path for post-connect setup.
         subscribeAll();
-        publishStatus(ONLINE_PAYLOAD);
+        // Checked again: shutdown may have started while subscribing (narrows, does not close,
+        // the window in which "online" could follow the offline status).
+        if (!shuttingDown) {
+            publishStatus(ONLINE_PAYLOAD);
+        }
     }
 
     /** Delegates an incoming message to {@link MqttMessageHandler}. */

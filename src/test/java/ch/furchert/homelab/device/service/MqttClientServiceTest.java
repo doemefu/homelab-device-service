@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -40,6 +41,7 @@ class MqttClientServiceTest {
 
     private static final Duration RETRY_INITIAL_DELAY = Duration.ofMillis(10);
     private static final Duration RETRY_MAX_DELAY = Duration.ofMillis(50);
+    private static final Duration RETRY_SHUTDOWN_WAIT = Duration.ofMillis(200);
 
     /** Long enough for several retries at {@link #RETRY_MAX_DELAY} if any were still scheduled. */
     private static final long QUIET_PERIOD_MS = 300;
@@ -62,8 +64,9 @@ class MqttClientServiceTest {
         lenient().when(props.getWillTopic()).thenReturn("javaBackend/mqtt/status");
         lenient().when(props.getWillPayload()).thenReturn("{\"MqttState\": 0}");
 
-        // Short retry delays keep the connect-retry tests fast; production uses 1 s .. 60 s.
-        service = new MqttClientService(props, messageHandler, RETRY_INITIAL_DELAY, RETRY_MAX_DELAY);
+        // Short retry delays keep the connect-retry tests fast; production uses 1 s .. 60 s, 12 s.
+        service = new MqttClientService(props, messageHandler,
+                RETRY_INITIAL_DELAY, RETRY_MAX_DELAY, RETRY_SHUTDOWN_WAIT);
     }
 
     @AfterEach
@@ -131,6 +134,19 @@ class MqttClientServiceTest {
     // -------------------------------------------------------------------------
 
     @Test
+    void connect_pinsMqtt311_soAnAttemptMakesOneTcpConnect() throws Exception {
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class)) {
+            service.connect();
+
+            ArgumentCaptor<MqttConnectOptions> optsCaptor =
+                    ArgumentCaptor.forClass(MqttConnectOptions.class);
+            verify(mocked.constructed().get(0)).connect(optsCaptor.capture());
+            // The Paho default (MQTT_VERSION_DEFAULT) falls back to 3.1 with a second TCP connect.
+            assertThat(optsCaptor.getValue().getMqttVersion()).isEqualTo(MqttConnectOptions.MQTT_VERSION_3_1_1);
+        }
+    }
+
+    @Test
     void connect_firstAttemptFails_retriesOnSameClientUntilConnected() throws Exception {
         try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class,
                 (mock, ctx) -> doThrow(new MqttException(MqttException.REASON_CODE_SERVER_CONNECT_ERROR))
@@ -139,14 +155,19 @@ class MqttClientServiceTest {
                         .when(mock).connect(any()))) {
             service.connect();
 
+            // Construction mocking only sees the test thread, so a client built on the retry thread
+            // would be real and uncounted. Three attempts on the first mock, all with the same
+            // options, are what prove that the retries reuse the one client.
             MqttClient client = mocked.constructed().get(0);
-            Awaitility.await().atMost(5, TimeUnit.SECONDS)
-                    .untilAsserted(() -> verify(client, times(3)).connect(any()));
+            ArgumentCaptor<MqttConnectOptions> optsCaptor =
+                    ArgumentCaptor.forClass(MqttConnectOptions.class);
+            verify(client, timeout(5_000).times(3)).connect(optsCaptor.capture());
+            assertThat(optsCaptor.getAllValues()).allSatisfy(
+                    opts -> assertThat(opts).isSameAs(optsCaptor.getAllValues().get(0)));
 
             // The first success ends the retries; Paho's automatic reconnect takes over from here.
-            Thread.sleep(QUIET_PERIOD_MS);
-            verify(client, times(3)).connect(any());
-            assertThat(mocked.constructed()).as("retries reuse the one client").hasSize(1);
+            verify(client, after(QUIET_PERIOD_MS).times(3)).connect(any());
+            service.disconnect();
         }
     }
 
@@ -161,9 +182,8 @@ class MqttClientServiceTest {
 
             // An exception other than MqttException on the retry thread must not end the retries
             // silently (a scheduled task swallows it).
-            MqttClient client = mocked.constructed().get(0);
-            Awaitility.await().atMost(5, TimeUnit.SECONDS)
-                    .untilAsserted(() -> verify(client, times(3)).connect(any()));
+            verify(mocked.constructed().get(0), timeout(5_000).times(3)).connect(any());
+            service.disconnect();
         }
     }
 
@@ -172,8 +192,7 @@ class MqttClientServiceTest {
         try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class)) {
             service.connect();
 
-            Thread.sleep(QUIET_PERIOD_MS);
-            verify(mocked.constructed().get(0), times(1)).connect(any());
+            verify(mocked.constructed().get(0), after(QUIET_PERIOD_MS).times(1)).connect(any());
         }
     }
 
@@ -191,9 +210,38 @@ class MqttClientServiceTest {
             service.disconnect();
             int attemptsAtShutdown = attempts.get();
 
-            Thread.sleep(QUIET_PERIOD_MS);
-            assertThat(attempts.get()).as("no connect attempt after shutdown").isEqualTo(attemptsAtShutdown);
-            verify(mocked.constructed().get(0), atLeastOnce()).close();
+            MqttClient client = mocked.constructed().get(0);
+            verify(client, after(QUIET_PERIOD_MS).times(attemptsAtShutdown)).connect(any());
+            verify(client).close();
+        }
+    }
+
+    @Test
+    void disconnect_attemptStillRunningAfterShutdownWait_interruptsItAndSkipsClose() throws Exception {
+        CountDownLatch secondAttemptStarted = new CountDownLatch(1);
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class,
+                (mock, ctx) -> doThrow(new MqttException(MqttException.REASON_CODE_SERVER_CONNECT_ERROR))
+                        .doAnswer(inv -> {
+                            // A broker that accepts TCP but never answers: Paho's connect waits until
+                            // interrupted and then throws an MqttException wrapping the interrupt.
+                            secondAttemptStarted.countDown();
+                            try {
+                                new CountDownLatch(1).await();
+                            } catch (InterruptedException e) {
+                                throw new MqttException(e);
+                            }
+                            return null;
+                        })
+                        .when(mock).connect(any()))) {
+            service.connect();
+            assertThat(secondAttemptStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            assertThatCode(service::disconnect).doesNotThrowAnyException();
+
+            // close() would throw CONNECT_IN_PROGRESS while Paho's connect is still running.
+            MqttClient client = mocked.constructed().get(0);
+            verify(client, never()).close();
+            verify(client, after(QUIET_PERIOD_MS).times(2)).connect(any());
         }
     }
 

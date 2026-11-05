@@ -36,7 +36,8 @@ import static org.mockito.Mockito.verify;
  * shared broker of {@code AbstractIntegrationTest} for the rest of the JVM run, and this test
  * needs a broker that does not exist yet when {@link MqttClientService#connect()} runs. The
  * broker is a separate container bound to a fixed host port, so the service can be pointed at
- * the address before anything listens there.
+ * the address before anything listens there. The port is probed free right before the bind; if
+ * something takes it in between, the container start fails loudly rather than flaking.
  */
 @Testcontainers(disabledWithoutDocker = true)
 class MqttClientServiceStartupRetryIntegrationTest {
@@ -69,17 +70,23 @@ class MqttClientServiceStartupRetryIntegrationTest {
         int port = freeLocalPort();
         String brokerUrl = "tcp://" + DockerClientFactory.instance().dockerHostIpAddress() + ":" + port;
         service = new MqttClientService(properties(brokerUrl), messageHandler,
-                Duration.ofMillis(200), Duration.ofSeconds(1));
+                Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofSeconds(12));
 
         // Nothing listens on the port yet: startup must neither throw nor wait for the broker.
+        long started = System.nanoTime();
         service.connect();
+        assertThat(Duration.ofNanos(System.nanoTime() - started))
+                .as("connect() returns without waiting for the broker")
+                .isLessThan(Duration.ofSeconds(5));
 
         try (GenericContainer<?> broker = new GenericContainer<>("eclipse-mosquitto:2")
                 .withExposedPorts(1883)
                 .withCopyFileToContainer(
                         MountableFile.forClasspathResource("mosquitto-test.conf"),
                         "/mosquitto/config/mosquitto.conf")
-                .waitingFor(Wait.forListeningPort())) {
+                // The log line, not the port: Docker can accept on a published port before
+                // Mosquitto listens inside the container.
+                .waitingFor(Wait.forLogMessage(".*mosquitto version .* running.*", 1))) {
             broker.setPortBindings(List.of(port + ":1883"));
             broker.start();
 
