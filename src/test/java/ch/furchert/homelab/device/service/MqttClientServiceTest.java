@@ -11,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.MockedConstruction;
 import org.mockito.Mockito;
@@ -39,11 +40,11 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class MqttClientServiceTest {
 
-    private static final Duration RETRY_INITIAL_DELAY = Duration.ofMillis(10);
-    private static final Duration RETRY_MAX_DELAY = Duration.ofMillis(50);
-    private static final Duration RETRY_SHUTDOWN_WAIT = Duration.ofMillis(200);
+    /** Short delays keep the connect-retry tests fast; production: {@code ConnectRetryTiming.PRODUCTION}. */
+    private static final MqttClientService.ConnectRetryTiming TIMING = new MqttClientService.ConnectRetryTiming(
+            Duration.ofMillis(10), Duration.ofMillis(50), Duration.ofSeconds(30), Duration.ofMillis(200));
 
-    /** Long enough for several retries at {@link #RETRY_MAX_DELAY} if any were still scheduled. */
+    /** Long enough for several retries at the 50 ms maximum delay if any were still scheduled. */
     private static final long QUIET_PERIOD_MS = 300;
 
     @Mock
@@ -64,9 +65,7 @@ class MqttClientServiceTest {
         lenient().when(props.getWillTopic()).thenReturn("javaBackend/mqtt/status");
         lenient().when(props.getWillPayload()).thenReturn("{\"MqttState\": 0}");
 
-        // Short retry delays keep the connect-retry tests fast; production uses 1 s .. 60 s, 12 s.
-        service = new MqttClientService(props, messageHandler,
-                RETRY_INITIAL_DELAY, RETRY_MAX_DELAY, RETRY_SHUTDOWN_WAIT);
+        service = new MqttClientService(props, messageHandler, TIMING);
     }
 
     @AfterEach
@@ -143,6 +142,42 @@ class MqttClientServiceTest {
             verify(mocked.constructed().get(0)).connect(optsCaptor.capture());
             // The Paho default (MQTT_VERSION_DEFAULT) falls back to 3.1 with a second TCP connect.
             assertThat(optsCaptor.getValue().getMqttVersion()).isEqualTo(MqttConnectOptions.MQTT_VERSION_3_1_1);
+        }
+    }
+
+    @Test
+    void connect_boundsEachAttemptAndRestoresTheWaitAfterwards() throws Exception {
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class,
+                (mock, ctx) -> when(mock.getTimeToWait()).thenReturn(-1L))) {
+            service.connect();
+
+            // Paho bounds only the TCP connect; the wait for CONNACK is bounded by timeToWait.
+            MqttClient client = mocked.constructed().get(0);
+            InOrder inOrder = inOrder(client);
+            inOrder.verify(client).setTimeToWait(30_000L);
+            inOrder.verify(client).connect(any());
+            inOrder.verify(client).setTimeToWait(-1L);
+        }
+    }
+
+    @Test
+    void connect_attemptTimesOutWithoutConnack_resetsClientBeforeNextAttempt() throws Exception {
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class,
+                (mock, ctx) -> doThrow(new MqttException(MqttException.REASON_CODE_CLIENT_TIMEOUT))
+                        .doNothing()
+                        .when(mock).connect(any()))) {
+            service.connect();
+
+            // After a timed-out wait Paho is still connecting, and the next connect() would throw
+            // CONNECT_IN_PROGRESS. A forced disconnect without a cause resets it to disconnected
+            // and does not start Paho's own reconnect cycle.
+            MqttClient client = mocked.constructed().get(0);
+            verify(client, timeout(5_000).times(2)).connect(any());
+            InOrder inOrder = inOrder(client);
+            inOrder.verify(client).connect(any());
+            inOrder.verify(client).disconnectForcibly(0, 0, false);
+            inOrder.verify(client).connect(any());
+            service.disconnect();
         }
     }
 
@@ -247,7 +282,8 @@ class MqttClientServiceTest {
 
     @Test
     void retryDelay_doublesFromInitialDelayAndCapsAtMaxDelay() {
-        MqttClientService withDefaults = new MqttClientService(props, messageHandler);
+        MqttClientService withDefaults = new MqttClientService(props, messageHandler,
+                MqttClientService.ConnectRetryTiming.PRODUCTION);
 
         assertThat(List.of(1, 2, 3, 4, 5, 6, 7, 8).stream().map(withDefaults::retryDelay).toList())
                 .containsExactly(Duration.ofSeconds(1), Duration.ofSeconds(2), Duration.ofSeconds(4),

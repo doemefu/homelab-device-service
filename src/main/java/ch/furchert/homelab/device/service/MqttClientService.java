@@ -44,20 +44,34 @@ public class MqttClientService implements MqttCallbackExtended {
     private static final String OFFLINE_PAYLOAD = "{\"MqttState\": 0}";
 
     /**
-     * Paho TCP connect timeout. With MQTT 3.1.1 pinned an attempt makes one TCP connect, so this
-     * bounds an attempt against an unreachable broker (DNS resolution and a broker that accepts
-     * TCP but never sends CONNACK are not covered: Paho 1.2.5 has no CONNACK timeout).
+     * Paho TCP connect timeout. With MQTT 3.1.1 pinned an attempt makes one TCP connect. It does
+     * not cover DNS resolution or the wait for CONNACK (Paho 1.2.5 has no CONNACK timeout); that
+     * is what {@link ConnectRetryTiming#attemptTimeout()} bounds.
      */
     private static final int CONNECTION_TIMEOUT_SECONDS = 10;
 
+    /**
+     * Timing of the connect attempts after startup (package-private for tests).
+     *
+     * @param initialDelay   delay after the first failed attempt; doubles per further failure
+     * @param maxDelay       cap of the delay between attempts
+     * @param attemptTimeout bound of one attempt, including the wait for CONNACK
+     * @param shutdownWait   how long shutdown waits for a running attempt before interrupting it
+     */
+    record ConnectRetryTiming(Duration initialDelay, Duration maxDelay,
+                              Duration attemptTimeout, Duration shutdownWait) {
+
+        /**
+         * 1 s doubling up to 60 s; an attempt may take 30 s (DNS + 10 s TCP connect + CONNACK);
+         * shutdown waits one TCP connect timeout plus 2 s, well inside the pod's 30 s grace period.
+         */
+        static final ConnectRetryTiming PRODUCTION = new ConnectRetryTiming(Duration.ofSeconds(1),
+                Duration.ofSeconds(60), Duration.ofSeconds(30), Duration.ofSeconds(CONNECTION_TIMEOUT_SECONDS + 2));
+    }
 
     private final MqttProperties props;
     private final MqttMessageHandler messageHandler;
-    private final Duration connectRetryInitialDelay;
-    private final Duration connectRetryMaxDelay;
-
-    /** How long shutdown waits for a running connect attempt before interrupting it. */
-    private final Duration connectRetryShutdownWait;
+    private final ConnectRetryTiming timing;
 
     /**
      * Runs the connect retries after a failed first connect. One daemon thread, created only
@@ -77,22 +91,14 @@ public class MqttClientService implements MqttCallbackExtended {
     @Autowired
     public MqttClientService(MqttProperties props,
                               @Lazy MqttMessageHandler messageHandler) {
-        this(props, messageHandler, Duration.ofSeconds(1), Duration.ofSeconds(60),
-                Duration.ofSeconds(CONNECTION_TIMEOUT_SECONDS + 2));
+        this(props, messageHandler, ConnectRetryTiming.PRODUCTION);
     }
 
-    /**
-     * Test seam for the connect-retry timing. Production: 1 s doubling up to 60 s, and shutdown
-     * waits one connect timeout plus 2 s for a running attempt.
-     */
-    MqttClientService(MqttProperties props, MqttMessageHandler messageHandler,
-                      Duration connectRetryInitialDelay, Duration connectRetryMaxDelay,
-                      Duration connectRetryShutdownWait) {
+    /** Test seam for the connect-retry timing. */
+    MqttClientService(MqttProperties props, MqttMessageHandler messageHandler, ConnectRetryTiming timing) {
         this.props = props;
         this.messageHandler = messageHandler;
-        this.connectRetryInitialDelay = connectRetryInitialDelay;
-        this.connectRetryMaxDelay = connectRetryMaxDelay;
-        this.connectRetryShutdownWait = connectRetryShutdownWait;
+        this.timing = timing;
         this.connectRetryExecutor = new ScheduledThreadPoolExecutor(1, runnable -> {
             Thread thread = new Thread(runnable, "mqtt-connect-retry");
             thread.setDaemon(true);
@@ -167,7 +173,7 @@ public class MqttClientService implements MqttCallbackExtended {
             return;
         }
         try {
-            client.connect(connectOptions);
+            connectBounded();
             if (attempt > 1) {
                 log.info("MQTT connect succeeded on attempt {}", attempt);
             }
@@ -198,15 +204,37 @@ public class MqttClientService implements MqttCallbackExtended {
     }
 
     /**
+     * {@code client.connect} with the wait bounded by {@link ConnectRetryTiming#attemptTimeout()}.
+     * The wait is restored afterwards, so publish and subscribe keep their behaviour.
+     */
+    private void connectBounded() throws MqttException {
+        long previousTimeToWait = client.getTimeToWait();
+        client.setTimeToWait(timing.attemptTimeout().toMillis());
+        try {
+            client.connect(connectOptions);
+        } catch (MqttException e) {
+            if (e.getReasonCode() == MqttException.REASON_CODE_CLIENT_TIMEOUT) {
+                // No CONNACK in time. Paho is still connecting, and the next connect() would throw
+                // CONNECT_IN_PROGRESS: reset the client. Without a cause this neither calls
+                // connectionLost() nor starts Paho's own reconnect cycle.
+                client.disconnectForcibly(0, 0, false);
+            }
+            throw e;
+        } finally {
+            client.setTimeToWait(previousTimeToWait);
+        }
+    }
+
+    /**
      * Delay after the given number of failed attempts: the initial delay, doubled per further
      * failure, capped at the maximum (1 s, 2 s, 4 s ... 60 s in production).
      */
     Duration retryDelay(int failedAttempts) {
-        Duration delay = connectRetryInitialDelay;
-        for (int i = 1; i < failedAttempts && delay.compareTo(connectRetryMaxDelay) < 0; i++) {
+        Duration delay = timing.initialDelay();
+        for (int i = 1; i < failedAttempts && delay.compareTo(timing.maxDelay()) < 0; i++) {
             delay = delay.multipliedBy(2);
         }
-        return delay.compareTo(connectRetryMaxDelay) < 0 ? delay : connectRetryMaxDelay;
+        return delay.compareTo(timing.maxDelay()) < 0 ? delay : timing.maxDelay();
     }
 
     /**
@@ -244,11 +272,11 @@ public class MqttClientService implements MqttCallbackExtended {
     private boolean stopConnectRetries() {
         connectRetryExecutor.shutdown();
         try {
-            if (connectRetryExecutor.awaitTermination(connectRetryShutdownWait.toMillis(), TimeUnit.MILLISECONDS)) {
+            if (connectRetryExecutor.awaitTermination(timing.shutdownWait().toMillis(), TimeUnit.MILLISECONDS)) {
                 return true;
             }
             log.warn("MQTT connect attempt still running after {} ms; interrupting it and "
-                    + "skipping the MQTT disconnect", connectRetryShutdownWait.toMillis());
+                    + "skipping the MQTT disconnect", timing.shutdownWait().toMillis());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

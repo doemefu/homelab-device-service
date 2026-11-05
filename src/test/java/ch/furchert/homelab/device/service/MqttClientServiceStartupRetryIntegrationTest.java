@@ -16,13 +16,17 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.MountableFile;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -30,7 +34,8 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 /**
- * Broker unavailable when the service starts, available later (#114), against a real Mosquitto.
+ * Startup connect retry (#114) against real sockets: a Mosquitto that starts only after the
+ * service, and a TCP server that accepts but never answers (no CONNACK).
  *
  * <p>No Spring context on purpose: every cached integration context stays subscribed to the
  * shared broker of {@code AbstractIntegrationTest} for the rest of the JVM run, and this test
@@ -70,7 +75,8 @@ class MqttClientServiceStartupRetryIntegrationTest {
         int port = freeLocalPort();
         String brokerUrl = "tcp://" + DockerClientFactory.instance().dockerHostIpAddress() + ":" + port;
         service = new MqttClientService(properties(brokerUrl), messageHandler,
-                Duration.ofMillis(200), Duration.ofSeconds(1), Duration.ofSeconds(12));
+                new MqttClientService.ConnectRetryTiming(Duration.ofMillis(200), Duration.ofSeconds(1),
+                        Duration.ofSeconds(30), Duration.ofSeconds(12)));
 
         // Nothing listens on the port yet: startup must neither throw nor wait for the broker.
         long started = System.nanoTime();
@@ -114,6 +120,49 @@ class MqttClientServiceStartupRetryIntegrationTest {
             assertThat(awaitPayload(statuses, OFFLINE, 10))
                     .as("service publishes its offline status on shutdown")
                     .isTrue();
+        }
+    }
+
+    @Test
+    @Timeout(60)
+    void brokerAcceptsTcpButNeverSendsConnack_attemptTimesOutAndRetries() throws Exception {
+        AtomicInteger accepted = new AtomicInteger();
+        List<Socket> open = new CopyOnWriteArrayList<>();
+        try (ServerSocket silentBroker = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
+            Thread acceptor = new Thread(() -> {
+                while (!silentBroker.isClosed()) {
+                    try {
+                        open.add(silentBroker.accept()); // read nothing, answer nothing
+                        accepted.incrementAndGet();
+                    } catch (IOException e) {
+                        return;
+                    }
+                }
+            }, "silent-broker");
+            acceptor.setDaemon(true);
+            acceptor.start();
+
+            service = new MqttClientService(
+                    properties("tcp://127.0.0.1:" + silentBroker.getLocalPort()), messageHandler,
+                    new MqttClientService.ConnectRetryTiming(Duration.ofMillis(100), Duration.ofMillis(200),
+                            Duration.ofMillis(500), Duration.ofSeconds(2)));
+
+            long started = System.nanoTime();
+            service.connect();
+            assertThat(Duration.ofNanos(System.nanoTime() - started))
+                    .as("the first attempt gives up after its timeout instead of waiting for CONNACK")
+                    .isLessThan(Duration.ofSeconds(5));
+
+            // Every new TCP connection is a new attempt: the timed-out one did not block the retries.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+            while (accepted.get() < 3 && System.nanoTime() < deadline) {
+                Thread.sleep(50);
+            }
+            assertThat(accepted.get()).as("connect attempts reaching the silent broker").isGreaterThanOrEqualTo(3);
+        } finally {
+            for (Socket socket : open) {
+                socket.close();
+            }
         }
     }
 
