@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -252,6 +253,49 @@ class MqttClientServiceTest {
     }
 
     @Test
+    void disconnect_waitsForRunningAttempt_thenDisconnectsAndClosesTheLateConnection() throws Exception {
+        MqttClientService waitingService = new MqttClientService(props, messageHandler,
+                new MqttClientService.ConnectRetryTiming(Duration.ofMillis(10), Duration.ofMillis(50),
+                        Duration.ofSeconds(30), Duration.ofSeconds(5)));
+        CountDownLatch retryStarted = new CountDownLatch(1);
+        CountDownLatch releaseRetry = new CountDownLatch(1);
+        AtomicBoolean connected = new AtomicBoolean();
+        try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class,
+                (mock, ctx) -> {
+                    doThrow(new MqttException(MqttException.REASON_CODE_SERVER_CONNECT_ERROR))
+                            .doAnswer(inv -> {
+                                retryStarted.countDown();
+                                releaseRetry.await();
+                                connected.set(true); // the late attempt succeeds
+                                return null;
+                            })
+                            .when(mock).connect(any());
+                    when(mock.isConnected()).thenAnswer(inv -> connected.get());
+                })) {
+            waitingService.connect();
+            assertThat(retryStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+            Thread shutdown = new Thread(waitingService::disconnect, "test-shutdown");
+            shutdown.start();
+            try {
+                // Release the attempt only once disconnect() is waiting for it (or has returned,
+                // which the verifications below then report as a failure).
+                Awaitility.await().atMost(5, TimeUnit.SECONDS)
+                        .until(() -> shutdown.getState() == Thread.State.TIMED_WAITING
+                                || shutdown.getState() == Thread.State.TERMINATED);
+            } finally {
+                releaseRetry.countDown();
+            }
+            shutdown.join(5_000);
+            assertThat(shutdown.isAlive()).as("disconnect() returned").isFalse();
+
+            MqttClient client = mocked.constructed().get(0);
+            verify(client).disconnect();
+            verify(client).close();
+        }
+    }
+
+    @Test
     void disconnect_attemptStillRunningAfterShutdownWait_interruptsItAndSkipsClose() throws Exception {
         CountDownLatch secondAttemptStarted = new CountDownLatch(1);
         try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class,
@@ -345,11 +389,14 @@ class MqttClientServiceTest {
         try (MockedConstruction<MqttClient> mocked = Mockito.mockConstruction(MqttClient.class)) {
             service.connect();
             service.disconnect();
+            MqttClient client = mocked.constructed().get(0);
+            // The connect completes after shutdown started, so the client now reports connected
+            // (stubbed after disconnect(), which would otherwise publish the offline status).
+            when(client.isConnected()).thenReturn(true);
             // A connect that completes while the service shuts down must not re-announce "online"
             // after disconnect() published the offline status.
             service.connectComplete(false, "tcp://localhost:1883");
 
-            MqttClient client = mocked.constructed().get(0);
             verify(client, never()).subscribe(any(String.class), anyInt());
             verify(client, never()).publish(any(String.class), any(MqttMessage.class));
         }
