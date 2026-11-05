@@ -55,7 +55,9 @@ public class MqttClientService implements MqttCallbackExtended {
      *
      * @param initialDelay   delay after the first failed attempt; doubles per further failure
      * @param maxDelay       cap of the delay between attempts
-     * @param attemptTimeout bound of one attempt, including the wait for CONNACK
+     * @param attemptTimeout bound of one attempt, including the wait for CONNACK. Assumes DNS
+     *                       resolution plus the TCP connect finish well within it: the reset after
+     *                       a timeout cannot stop a connect that is still resolving the host name.
      * @param shutdownWait   how long shutdown waits for a running attempt before interrupting it
      */
     record ConnectRetryTiming(Duration initialDelay, Duration maxDelay,
@@ -214,6 +216,10 @@ public class MqttClientService implements MqttCallbackExtended {
             client.connect(connectOptions);
         } catch (MqttException e) {
             if (e.getReasonCode() == MqttException.REASON_CODE_CLIENT_TIMEOUT) {
+                if (client.isConnected()) {
+                    // CONNACK arrived right at the timeout: the session is up, keep it.
+                    return;
+                }
                 // No CONNACK in time. Paho is still connecting, and the next connect() would throw
                 // CONNECT_IN_PROGRESS: reset the client. Without a cause this neither calls
                 // connectionLost() nor starts Paho's own reconnect cycle.
