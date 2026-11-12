@@ -111,6 +111,12 @@ GitHub Actions workflow: `.github/workflows/build.yml`
 
 **No manual image tag update is needed.** Flux CD automatically detects the new `main-*` tag on GHCR, commits the updated tag to `k8s/deployment.yaml`, and rolls out the new pod.
 
+**On PRs to `main` only:** `.github/workflows/workflow-lint.yml` runs two checks on the workflow files:
+- `Pinned actions`: every `uses:` must be pinned to a full 40-character commit SHA (with a `# vX.Y.Z` comment), a local `./` action, or a `docker://…@sha256:` digest. Tags and branches fail.
+- `actionlint`: a pinned, checksum-verified actionlint binary.
+
+Dependabot bumps the action SHAs (with a 7-day cooldown). The QEMU (`tonistiigi/binfmt`) and BuildKit (`moby/buildkit`) images in `build.yml` are pinned by tag + digest and bumped by hand.
+
 ---
 
 ## Pull Request Process

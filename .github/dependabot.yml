@@ -23,6 +23,9 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # Wait a week before proposing a new action release (#126).
+    cooldown:
+      default-days: 7
 
   - package-ecosystem: docker
     directory: "/"
