@@ -48,6 +48,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -61,8 +62,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Covers what the mocked decoder in the WebSocket integration tests cannot: an expired token,
  * an access token with {@code typ} {@code at+jwt}, a token signed by a foreign key, a token with a
- * wrong or missing issuer and an ID token are all rejected on CONNECT, because CONNECT uses the same
- * decoder as the REST API (#81). Audience is not validated yet (doemefu/homelab-auth-service#101).
+ * wrong or missing issuer, a token for another audience and an ID token are all rejected on CONNECT,
+ * because CONNECT uses the same decoder as the REST API (#81). A valid token without role ADMIN is
+ * rejected as well (#124). The accepted audience is {@code furchert-ch}, an interim rule until
+ * doemefu/homelab-auth-service#101.
  */
 @WebMvcTest(DeviceController.class)
 @Import(SecurityConfig.class)
@@ -113,6 +116,37 @@ class StompAuthRealDecoderTest {
     }
 
     @Test
+    void connect_withUserRole_isForbidden() throws Exception {
+        String user = token(claims -> claims.claim("role", "USER"));
+
+        assertThatThrownBy(() -> interceptor().preSend(connect(user), channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessage("Forbidden")
+                .hasNoCause();
+    }
+
+    @Test
+    void connect_withClientCredentialsToken_isForbidden() throws Exception {
+        // furchert-ch's own client_credentials token: accepted audience, no role.
+        String clientCredentials = token(claims -> claims.claim("role", null).claim("scope", List.of("netmon:read")));
+
+        assertThatThrownBy(() -> interceptor().preSend(connect(clientCredentials), channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessage("Forbidden");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"grafana", "litellm", "device-service", "terra1"})
+    void connect_withOtherAudience_isRejected(String audience) throws Exception {
+        assertRejected(token(claims -> claims.audience(audience)));
+    }
+
+    @Test
+    void connect_withoutAudience_isRejected() throws Exception {
+        assertRejected(token(claims -> claims.audience((String) null)));
+    }
+
+    @Test
     void connect_withExpiredToken_isRejected() throws Exception {
         // Well past the decoder's default 60 s clock skew.
         String expired = token(SIGNING_KEY, null, Instant.now().minusSeconds(3600));
@@ -143,7 +177,8 @@ class StompAuthRealDecoderTest {
 
     @Test
     void connect_withIdToken_isRejected() throws Exception {
-        assertRejected(token(claims -> claims.audience("grafana").claim("azp", "grafana").claim("role", "ADMIN")));
+        // furchert-ch ID token: the audience matches, the azp check rejects it.
+        assertRejected(token(claims -> claims.claim("azp", "furchert-ch")));
     }
 
     // -------------------------------------------------------------------------
@@ -158,7 +193,7 @@ class StompAuthRealDecoderTest {
     }
 
     private StompAuthChannelInterceptor interceptor() {
-        return new StompAuthChannelInterceptor(jwtDecoder, true);
+        return new StompAuthChannelInterceptor(jwtDecoder, SecurityConfig.jwtAuthenticationConverter(), true);
     }
 
     private static Message<byte[]> connect(String token) {
@@ -168,12 +203,17 @@ class StompAuthRealDecoderTest {
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
 
-    /** Valid token from {@link #SIGNING_KEY} with the claims changed by {@code customizer}. */
+    /**
+     * Valid furchert-ch ADMIN access token from {@link #SIGNING_KEY} with the claims changed by
+     * {@code customizer}.
+     */
     private static String token(Consumer<JWTClaimsSet.Builder> customizer) throws JOSEException {
         Instant now = Instant.now();
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
                 .issuer("https://auth.furchert.ch")
                 .subject("owner")
+                .audience("furchert-ch")
+                .claim("role", "ADMIN")
                 .issueTime(Date.from(now))
                 .notBeforeTime(Date.from(now))
                 .expirationTime(Date.from(now.plusSeconds(300)))
@@ -193,6 +233,8 @@ class StompAuthRealDecoderTest {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .issuer("https://auth.furchert.ch")
                 .subject("owner")
+                .audience("furchert-ch")
+                .claim("role", "ADMIN")
                 .issueTime(Date.from(issuedAt))
                 .notBeforeTime(Date.from(issuedAt))
                 .expirationTime(Date.from(expiresAt))

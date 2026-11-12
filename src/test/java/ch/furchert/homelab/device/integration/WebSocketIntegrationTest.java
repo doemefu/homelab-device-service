@@ -178,6 +178,7 @@ class WebSocketIntegrationTest extends AbstractIntegrationTest {
         when(jwtDecoder.decode(VALID_TOKEN)).thenReturn(Jwt.withTokenValue(VALID_TOKEN)
                 .header("alg", "RS256")
                 .subject("ws-it")
+                .claim("role", "ADMIN")
                 .issuedAt(now)
                 .expiresAt(now.plusSeconds(300))
                 .build());

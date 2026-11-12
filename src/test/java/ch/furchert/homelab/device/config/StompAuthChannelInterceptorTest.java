@@ -11,12 +11,14 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -47,8 +49,33 @@ class StompAuthChannelInterceptorTest {
                 frame(StompCommand.CONNECT, a -> a.setNativeHeader("Authorization", "Bearer " + TOKEN)), channel);
 
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(result, StompHeaderAccessor.class);
-        assertThat(accessor.getUser()).isInstanceOfSatisfying(JwtAuthenticationToken.class,
-                user -> assertThat(user.getToken()).isSameAs(jwt));
+        assertThat(accessor.getUser()).isInstanceOfSatisfying(JwtAuthenticationToken.class, user -> {
+            assertThat(user.getToken()).isSameAs(jwt);
+            assertThat(user.getAuthorities()).extracting(GrantedAuthority::getAuthority).contains("ROLE_ADMIN");
+        });
+    }
+
+    @Test
+    void connect_withUserRole_isRejected() {
+        when(jwtDecoder.decode(TOKEN)).thenReturn(jwt(b -> b.claim("role", "USER")));
+
+        assertThatThrownBy(() -> interceptor(true).preSend(
+                frame(StompCommand.CONNECT, a -> a.setNativeHeader("Authorization", "Bearer " + TOKEN)), channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessage("Forbidden")
+                .hasNoCause();
+    }
+
+    @Test
+    void connect_withoutRole_isRejected() {
+        // client_credentials tokens (furchert-ch, data-service, device clients) carry no role.
+        when(jwtDecoder.decode(TOKEN)).thenReturn(jwt(b -> b.claims(c -> c.remove("role"))
+                .claim("scope", List.of("netmon:read"))));
+
+        assertThatThrownBy(() -> interceptor(true).preSend(
+                frame(StompCommand.CONNECT, a -> a.setNativeHeader("Authorization", "Bearer " + TOKEN)), channel))
+                .isInstanceOf(MessageDeliveryException.class)
+                .hasMessage("Forbidden");
     }
 
     @Test
@@ -276,7 +303,7 @@ class StompAuthChannelInterceptorTest {
     // ------------------------------------------------------------------
 
     private StompAuthChannelInterceptor interceptor(boolean requireAuth) {
-        return new StompAuthChannelInterceptor(jwtDecoder, requireAuth);
+        return new StompAuthChannelInterceptor(jwtDecoder, SecurityConfig.jwtAuthenticationConverter(), requireAuth);
     }
 
     /** Builds an inbound frame the way {@code StompSubProtocolHandler} does: with a mutable accessor. */
@@ -287,13 +314,20 @@ class StompAuthChannelInterceptorTest {
         return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
     }
 
+    /** A decoded ADMIN access token. */
     private static Jwt jwt() {
+        return jwt(b -> {});
+    }
+
+    private static Jwt jwt(Consumer<Jwt.Builder> customizer) {
         Instant now = Instant.now();
-        return Jwt.withTokenValue(TOKEN)
+        Jwt.Builder builder = Jwt.withTokenValue(TOKEN)
                 .header("alg", "RS256")
                 .subject("owner")
+                .claim("role", "ADMIN")
                 .issuedAt(now)
-                .expiresAt(now.plusSeconds(300))
-                .build();
+                .expiresAt(now.plusSeconds(300));
+        customizer.accept(builder);
+        return builder.build();
     }
 }

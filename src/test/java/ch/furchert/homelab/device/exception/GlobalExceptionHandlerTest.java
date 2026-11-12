@@ -110,7 +110,7 @@ class GlobalExceptionHandlerTest {
     void unhandledException_returns500WithGenericErrorKey() throws Exception {
         when(deviceService.getAllDevices()).thenThrow(new RuntimeException("DB down"));
 
-        mockMvc.perform(get("/devices").with(jwt()))
+        mockMvc.perform(get("/devices").with(adminJwt()))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.error").value("Internal server error"));
     }
@@ -119,14 +119,14 @@ class GlobalExceptionHandlerTest {
     void unhandledException_doesNotLeakInternalExceptionMessage() throws Exception {
         when(deviceService.getAllDevices()).thenThrow(new RuntimeException("secret-internal-message"));
 
-        mockMvc.perform(get("/devices").with(jwt()))
+        mockMvc.perform(get("/devices").with(adminJwt()))
                 .andExpect(status().isInternalServerError())
                 // The raw exception message must never reach the response body
                 .andExpect(jsonPath("$.error").value(not("secret-internal-message")))
                 .andExpect(jsonPath("$").value(not(org.hamcrest.Matchers.hasKey("details"))));
     }
 
-    /** Control is ADMIN-only (#81). */
+    /** Every /devices request is ADMIN-only (#81, #124). */
     private static JwtRequestPostProcessor adminJwt() {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }

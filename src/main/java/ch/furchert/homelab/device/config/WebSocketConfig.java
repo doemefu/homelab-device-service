@@ -16,7 +16,7 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
  * The in-process simple broker is sufficient for single-node broadcast-only usage.
  *
  * <p>Browser origins are restricted to {@code app.websocket.allowed-origins}. Inbound frames pass
- * {@link StompAuthChannelInterceptor}: a bearer JWT on CONNECT when
+ * {@link StompAuthChannelInterceptor}: a bearer JWT with role ADMIN on CONNECT when
  * {@code app.websocket.require-auth} is true, and no client SEND outside {@code /app/**}.
  */
 @Configuration
@@ -48,6 +48,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(new StompAuthChannelInterceptor(jwtDecoder, requireAuth));
+        registration.interceptors(new StompAuthChannelInterceptor(
+                jwtDecoder, SecurityConfig.jwtAuthenticationConverter(), requireAuth));
     }
 }
