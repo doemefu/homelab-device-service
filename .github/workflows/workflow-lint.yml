@@ -2,7 +2,8 @@ name: Workflow Lint
 
 # Pull-request-only checks for the workflow files (#126):
 # - pinned-actions: every `uses:` must be a local action (`./...`), `owner/repo[/path]@<40-hex SHA>`
-#   or `docker://...@sha256:<64-hex>`. An allowlist, so tags, branches and short SHAs all fail.
+#   or `docker://...@sha256:<64-hex>`. An allowlist over the parsed YAML
+#   (.github/scripts/check_action_pins.py), so tags, branches and short SHAs all fail.
 # - actionlint: pinned release binary, checksum-verified before extraction (same pattern as the
 #   infrastructure repo's lint-workflows job; bump version and SHA-256 together by hand).
 
@@ -26,16 +27,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Self-test the pin check
+        run: python3 .github/scripts/check_action_pins.py --self-test
       - name: Require full-SHA or digest pins
         run: |
           set -euo pipefail
-          bad=$(grep -rhnE '^\s*-?\s*\{?\s*uses:' .github/workflows/ \
-            | grep -vE "uses:\s+[\"']?(\./[^ \"']*|[^ @\"']+@[0-9a-f]{40}|docker://[^ \"']+@sha256:[0-9a-f]{64})[\"']?\}?(\s+#.*)?$" || true)
-          if [ -n "$bad" ]; then
-            echo "$bad"
-            echo "::error::unpinned uses: (pin to a full commit SHA with a version comment)"
-            exit 1
-          fi
+          shopt -s nullglob
+          python3 .github/scripts/check_action_pins.py .github/workflows/*.yml .github/workflows/*.yaml
 
   actionlint:
     name: actionlint
