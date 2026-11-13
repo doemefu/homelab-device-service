@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -73,12 +74,19 @@ class SecurityConfigTest {
     }
 
     @Test
-    void apiDevices_withJwt_isHandled() throws Exception {
+    void apiDevices_withAdminJwt_isHandled() throws Exception {
         when(deviceService.getAllDevices()).thenReturn(List.of());
 
-        mockMvc.perform(get("/devices").with(jwt()))
+        mockMvc.perform(get("/devices").with(jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void apiDevices_withJwtWithoutAdminRole_isForbidden() throws Exception {
+        // Reads are ADMIN-only as well (#124).
+        mockMvc.perform(get("/devices").with(jwt()))
+                .andExpect(status().isForbidden());
     }
 
     @Test

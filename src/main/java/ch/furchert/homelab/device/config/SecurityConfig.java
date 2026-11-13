@@ -3,7 +3,6 @@ package ch.furchert.homelab.device.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -72,9 +71,8 @@ public class SecurityConfig {
 
     /**
      * Chain 2 (order 2): stateless resource server for REST API, WebSocket, actuator.
-     * Reads under {@code /devices/**} and {@code /schedules/**} need any valid access token; every
-     * other method there (device control, registration, schedule writes) needs role ADMIN (#81, #41).
-     * This chain handles all requests NOT matched by Chain 1.
+     * Every request under {@code /devices/**} and {@code /schedules/**}, reads included, needs role
+     * ADMIN (#81, #41, #124). This chain handles all requests NOT matched by Chain 1.
      */
     @Bean
     @Order(2)
@@ -96,14 +94,13 @@ public class SecurityConfig {
                 // WebSocket upgrade stays open: browsers cannot send a bearer token on it.
                 // The JWT is checked on the STOMP CONNECT frame (StompAuthChannelInterceptor).
                 .requestMatchers("/ws/**").permitAll()
-                // Reads stay open to any valid access token; writes are ADMIN-only (#81, #41)
-                .requestMatchers(HttpMethod.GET, "/devices/**", "/schedules/**").authenticated()
+                // Reads and writes are ADMIN-only (#81, #41, #124)
                 .requestMatchers("/devices/**", "/schedules/**").hasRole("ADMIN")
                 // Everything else requires a valid JWT
                 .anyRequest().authenticated()
             )
-            // Validate JWTs via the JWKS endpoint and issuer configured in application.yaml; the
-            // auto-configured decoder also applies the idTokenRejectingValidator bean below
+            // Validate JWTs via the JWKS endpoint, issuer and audience configured in application.yaml;
+            // the auto-configured decoder also applies the idTokenRejectingValidator bean below
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
             );

@@ -36,7 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Slice tests for {@link ScheduleController} with the production {@link SecurityConfig}:
- * reads need any token, writes need ROLE_ADMIN, validation and error mapping (#41).
+ * reads and writes need ROLE_ADMIN (#41, #124), validation and error mapping.
  */
 @WebMvcTest(ScheduleController.class)
 @Import(SecurityConfig.class)
@@ -69,10 +69,10 @@ class ScheduleControllerTest {
     // --- reads -------------------------------------------------------------
 
     @Test
-    void list_anyToken_returnsSchedules() throws Exception {
+    void list_admin_returnsSchedules() throws Exception {
         when(scheduleService.list(null)).thenReturn(List.of(DTO));
 
-        mockMvc.perform(get("/schedules").with(user()))
+        mockMvc.perform(get("/schedules").with(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(5))
                 .andExpect(jsonPath("$[0].state").value(1))
@@ -83,10 +83,17 @@ class ScheduleControllerTest {
     void list_withDeviceFilter_passesItOn() throws Exception {
         when(scheduleService.list("terra2")).thenReturn(List.of());
 
-        mockMvc.perform(get("/schedules").param("device", "terra2").with(user()))
+        mockMvc.perform(get("/schedules").param("device", "terra2").with(admin()))
                 .andExpect(status().isOk());
 
         verify(scheduleService).list("terra2");
+    }
+
+    @Test
+    void reads_withUserRole_return403() throws Exception {
+        mockMvc.perform(get("/schedules").with(user())).andExpect(status().isForbidden());
+        mockMvc.perform(get("/schedules/5").with(user())).andExpect(status().isForbidden());
+        verifyNoInteractions(scheduleService);
     }
 
     @Test
@@ -99,7 +106,7 @@ class ScheduleControllerTest {
     void get_knownId_returnsSchedule() throws Exception {
         when(scheduleService.get(5L)).thenReturn(DTO);
 
-        mockMvc.perform(get("/schedules/5").with(user()))
+        mockMvc.perform(get("/schedules/5").with(admin()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cronExpression").value("0 0 8 * * *"));
     }
@@ -108,14 +115,14 @@ class ScheduleControllerTest {
     void get_unknownId_returns404() throws Exception {
         when(scheduleService.get(9L)).thenThrow(new ScheduleNotFoundException(9L));
 
-        mockMvc.perform(get("/schedules/9").with(user()))
+        mockMvc.perform(get("/schedules/9").with(admin()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error").value("Schedule not found: 9"));
     }
 
     @Test
     void get_nonNumericId_returns400() throws Exception {
-        mockMvc.perform(get("/schedules/abc").with(user()))
+        mockMvc.perform(get("/schedules/abc").with(admin()))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(scheduleService);
     }

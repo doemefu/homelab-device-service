@@ -17,6 +17,7 @@ spring:
           # calling the real auth-service. Tests with a real decoder override it.
           jwk-set-uri: http://127.0.0.1:1/oauth2/jwks
           issuer-uri: https://auth.furchert.ch
+          audiences: furchert-ch
       client:
         registration:
           device-service:

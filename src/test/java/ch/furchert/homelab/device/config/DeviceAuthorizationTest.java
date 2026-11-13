@@ -64,9 +64,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * #81 (interim): issuer validation, ID-token rejection and the ADMIN rule for device writes, verified
- * with the production {@code JwtDecoder} against a JWKS served by the test (harness as in
- * {@code AccessTokenTypeGateTest}). Token shapes follow auth-service: user-driven grants carry an
+ * #81, #124: issuer and audience validation, ID-token rejection and the ADMIN rule for every
+ * {@code /devices/**} and {@code /schedules/**} request, verified with the production
+ * {@code JwtDecoder} against a JWKS served by the test (harness as in {@code AccessTokenTypeGateTest}).
+ * Token shapes follow auth-service: {@code aud} is the client id, user-driven grants carry an
  * unprefixed {@code role} claim, client_credentials tokens carry none, ID tokens carry {@code azp}.
  */
 @WebMvcTest({DeviceController.class, ScheduleController.class})
@@ -167,7 +168,7 @@ class DeviceAuthorizationTest {
     }
 
     // -------------------------------------------------------------------------
-    // Schedules (#41): same rule as /devices
+    // Schedules (#41, #124): same rule as /devices
     // -------------------------------------------------------------------------
 
     @Test
@@ -203,30 +204,82 @@ class DeviceAuthorizationTest {
     }
 
     @Test
-    void scheduleReads_withClientCredentialsToken_areOk() throws Exception {
+    void scheduleReads_withUserOrClientCredentialsToken_areForbidden() throws Exception {
+        for (String token : List.of(userToken("USER"), clientCredentialsToken())) {
+            for (String path : List.of("/schedules", "/schedules/1")) {
+                mockMvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
+                        .andExpect(status().isForbidden());
+            }
+        }
+
+        verifyNoInteractions(scheduleService);
+    }
+
+    @Test
+    void scheduleReads_withAdminRole_areOk() throws Exception {
         when(scheduleService.list(null)).thenReturn(List.of());
 
-        mockMvc.perform(get("/schedules").header(HttpHeaders.AUTHORIZATION, "Bearer " + clientCredentialsToken()))
+        mockMvc.perform(get("/schedules").header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken("ADMIN")))
                 .andExpect(status().isOk());
     }
 
     // -------------------------------------------------------------------------
-    // Reads: any valid access token (owner decision 2026-11-02)
+    // Reads: ADMIN only (#124)
     // -------------------------------------------------------------------------
 
     @Test
-    void getDevices_withUserRole_isOk() throws Exception {
-        when(deviceService.getAllDevices()).thenReturn(List.of());
+    void getDevices_withUserRole_isForbidden() throws Exception {
+        for (String path : List.of("/devices", "/devices/1")) {
+            mockMvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken("USER")))
+                    .andExpect(status().isForbidden())
+                    .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, containsString("insufficient_scope")));
+        }
 
-        mockMvc.perform(get("/devices").header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken("USER")))
-                .andExpect(status().isOk());
+        verifyNoInteractions(deviceService);
     }
 
     @Test
-    void getDevices_withClientCredentialsToken_isOk() throws Exception {
-        when(deviceService.getAllDevices()).thenReturn(List.of());
-
+    void getDevices_withClientCredentialsToken_isForbidden() throws Exception {
+        // furchert-ch's own client_credentials token: right audience, but no role.
         mockMvc.perform(get("/devices").header(HttpHeaders.AUTHORIZATION, "Bearer " + clientCredentialsToken()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(deviceService);
+    }
+
+    @Test
+    void getDevices_withAdminRole_isOk() throws Exception {
+        when(deviceService.getAllDevices()).thenReturn(List.of());
+
+        mockMvc.perform(get("/devices").header(HttpHeaders.AUTHORIZATION, "Bearer " + userToken("ADMIN")))
+                .andExpect(status().isOk());
+
+        verify(deviceService).getAllDevices();
+    }
+
+    // -------------------------------------------------------------------------
+    // Audience: only furchert-ch tokens (#81, interim until doemefu/homelab-auth-service#101)
+    // -------------------------------------------------------------------------
+
+    @ParameterizedTest
+    @ValueSource(strings = {"grafana", "litellm", "device-service", "data-service", "terra1"})
+    void otherAudience_withAdminRole_isUnauthorized(String audience) throws Exception {
+        // Access tokens minted for other clients (aud = their client id), including an ADMIN role.
+        assertUnauthorized(token(claims -> claims.audience(audience).claim("role", "ADMIN")));
+    }
+
+    @Test
+    void missingAudience_withAdminRole_isUnauthorized() throws Exception {
+        assertUnauthorized(token(claims -> claims.claim("role", "ADMIN")));
+    }
+
+    @Test
+    void additionalAudience_containingFurchertCh_isAccepted() throws Exception {
+        // The audience validator requires furchert-ch to be one of the aud values.
+        when(deviceService.getAllDevices()).thenReturn(List.of());
+
+        mockMvc.perform(get("/devices").header(HttpHeaders.AUTHORIZATION, "Bearer " + token(claims -> claims
+                        .audience(List.of("furchert-ch", "other")).claim("role", "ADMIN"))))
                 .andExpect(status().isOk());
     }
 
@@ -236,20 +289,22 @@ class DeviceAuthorizationTest {
 
     @Test
     void wrongIssuer_isUnauthorized() throws Exception {
-        assertUnauthorized(token(claims -> claims.issuer("https://evil.example").claim("role", "ADMIN")));
+        assertUnauthorized(token(claims -> claims
+                .issuer("https://evil.example").audience("furchert-ch").claim("role", "ADMIN")));
     }
 
     @Test
     void missingIssuer_isUnauthorized() throws Exception {
-        assertUnauthorized(token(claims -> claims.issuer(null).claim("role", "ADMIN")));
+        assertUnauthorized(token(claims -> claims.issuer(null).audience("furchert-ch").claim("role", "ADMIN")));
     }
 
     @Test
     void idToken_isUnauthorized() throws Exception {
-        // Shape of an auth-service ID token: azp + aud = the client id, role of the signed-in user.
+        // Shape of a furchert-ch ID token: azp + aud = the client id, role of the signed-in user.
+        // The audience matches, so the azp check is what rejects it.
         assertUnauthorized(token(claims -> claims
-                .audience("grafana")
-                .claim("azp", "grafana")
+                .audience("furchert-ch")
+                .claim("azp", "furchert-ch")
                 .claim("role", "ADMIN")));
     }
 

@@ -60,6 +60,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Gate G5 (doemefu/homelab#168): access tokens with {@code typ} {@code at+jwt} or
  * {@code application/at+jwt} must be rejected with 401 on {@code /devices/**}.
  *
+ * <p>The {@code at+jwt} rejection holds on its own: a token with the accepted audience
+ * ({@code furchert-ch}, #81) and role ADMIN is still rejected when only its {@code typ} is
+ * {@code at+jwt}. The hub's tokens are also rejected by audience.
+ *
  * <p>Uses the auto-configured decoder against a JWKS served by the test (no mocked decoder).
  * Tokens are real RS256 signatures over a key generated at run time.
  *
@@ -132,8 +136,31 @@ class AccessTokenTypeGateTest {
         verifyNoInteractions(deviceService, mqttClientService);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"at+jwt", "application/at+jwt"})
+    void getDevices_withAccessTokenTypeAndAcceptedAudience_returnsUnauthorized(String typ) throws Exception {
+        // Audience and role would pass; typ alone must reject.
+        mockMvc.perform(get("/devices")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + firstPartyToken(typ)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, containsString("invalid_token")));
+
+        verifyNoInteractions(deviceService, mqttClientService);
+    }
+
+    @Test
+    void getDevices_withHubAudienceAndJwtType_returnsUnauthorized() throws Exception {
+        // Not an at+jwt token, but minted for the hub: the audience check (#81) rejects it.
+        mockMvc.perform(get("/devices")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + hubShapedToken("JWT")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, containsString("invalid_token")));
+
+        verifyNoInteractions(deviceService, mqttClientService);
+    }
+
     // -------------------------------------------------------------------------
-    // Positive controls: same key, same claims, only typ differs
+    // Positive controls: same key, same claims as the at+jwt first-party case, only typ differs
     // -------------------------------------------------------------------------
 
     @Test
@@ -141,24 +168,10 @@ class AccessTokenTypeGateTest {
         when(deviceService.getAllDevices()).thenReturn(List.of());
 
         mockMvc.perform(get("/devices")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + hubShapedToken("JWT")))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + firstPartyToken("JWT")))
                 .andExpect(status().isOk());
 
         verify(deviceService).getAllDevices();
-    }
-
-    @Test
-    void controlDevice_withJwtType_passesAuthenticationButLacksRole() throws Exception {
-        // Authenticated (not 401): only typ differs from the rejected cases. The hub token carries no
-        // role, so the ADMIN rule for device control (#81) denies it with 403 before the controller.
-        mockMvc.perform(post("/devices/1/control")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + hubShapedToken("JWT"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(CONTROL_BODY))
-                .andExpect(status().isForbidden())
-                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, containsString("insufficient_scope")));
-
-        verifyNoInteractions(deviceService, mqttClientService);
     }
 
     @Test
@@ -167,7 +180,7 @@ class AccessTokenTypeGateTest {
         when(deviceService.getAllDevices()).thenReturn(List.of());
 
         mockMvc.perform(get("/devices")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + hubShapedToken(null)))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + firstPartyToken(null)))
                 .andExpect(status().isOk());
 
         verify(deviceService).getAllDevices();
@@ -182,7 +195,7 @@ class AccessTokenTypeGateTest {
         assertThat(jwtDecoder).isInstanceOf(NimbusJwtDecoder.class);
         assertThat(Mockito.mockingDetails(jwtDecoder).isMock()).isFalse();
 
-        String typed = hubShapedToken("at+jwt");
+        String typed = firstPartyToken("at+jwt");
         assertThatThrownBy(() -> jwtDecoder.decode(typed))
                 .isInstanceOfSatisfying(JwtValidationException.class, e ->
                         assertThat(e.getErrors()).anySatisfy(error -> {
@@ -191,8 +204,7 @@ class AccessTokenTypeGateTest {
                             assertThat(error.getDescription()).startsWith("the given typ value needs to be one of");
                         }));
 
-        assertThat(jwtDecoder.decode(hubShapedToken("JWT")).getClaimAsString("client_id"))
-                .isEqualTo("claude-mcp-hub");
+        assertThat(jwtDecoder.decode(firstPartyToken("JWT")).getAudience()).containsExactly("furchert-ch");
     }
 
     // -------------------------------------------------------------------------
@@ -201,18 +213,29 @@ class AccessTokenTypeGateTest {
 
     /** Claims as in spec 080 §4.2: hub audience, client_id, both hub scopes, no role. */
     private static String hubShapedToken(String typ) throws JOSEException {
+        return token(typ, new JWTClaimsSet.Builder()
+                .audience(List.of("https://mcp.furchert.ch/mcp"))
+                .claim("client_id", "claude-mcp-hub")
+                .claim("scope", List.of("mail:read", "calendar:read")));
+    }
+
+    /** A furchert-ch user access token of an ADMIN: the shape device-service accepts (#81, #124). */
+    private static String firstPartyToken(String typ) throws JOSEException {
+        return token(typ, new JWTClaimsSet.Builder()
+                .audience(List.of("furchert-ch"))
+                .claim("role", "ADMIN"));
+    }
+
+    private static String token(String typ, JWTClaimsSet.Builder claimsBuilder) throws JOSEException {
         Instant now = Instant.now();
         JWSHeader.Builder header = new JWSHeader.Builder(JWSAlgorithm.RS256)
                 .keyID(SIGNING_KEY.getKeyID());
         if (typ != null) {
             header.type(new JOSEObjectType(typ));
         }
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        JWTClaimsSet claims = claimsBuilder
                 .issuer("https://auth.furchert.ch")
                 .subject("owner")
-                .audience(List.of("https://mcp.furchert.ch/mcp"))
-                .claim("client_id", "claude-mcp-hub")
-                .claim("scope", List.of("mail:read", "calendar:read"))
                 .issueTime(Date.from(now))
                 .notBeforeTime(Date.from(now))
                 .expirationTime(Date.from(now.plusSeconds(600)))

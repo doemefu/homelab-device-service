@@ -1,5 +1,6 @@
 package ch.furchert.homelab.device.config;
 
+import org.springframework.core.convert.converter.Converter;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageDeliveryException;
@@ -7,10 +8,10 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /**
  * Guards the client-inbound STOMP channel.
@@ -18,8 +19,10 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  * <ul>
  *   <li>{@code CONNECT}: when {@code requireAuth} is set, the frame must carry a native
  *       {@code Authorization: Bearer <jwt>} header that the resource server's {@link JwtDecoder}
- *       accepts. Browsers cannot set headers on the WebSocket upgrade, so this is where
- *       authentication happens; {@code /ws/**} itself stays {@code permitAll()}.</li>
+ *       accepts, and the token must map to {@code ROLE_ADMIN} through the REST API's authentication
+ *       converter (#124). Browsers cannot set headers on the WebSocket upgrade, so this is where
+ *       authentication happens; {@code /ws/**} itself stays {@code permitAll()}. The role is checked
+ *       only here, not again on later frames of an open session.</li>
  *   <li>{@code SUBSCRIBE}: when {@code requireAuth} is set, the session must have an authenticated
  *       user (normally unreachable, because a rejected CONNECT closes the session). In both modes the
  *       destination must lie under {@code /topic/terrarium/}, the only tree the service broadcasts to.</li>
@@ -43,12 +46,17 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String APP_DESTINATION_PREFIX = "/app/";
     private static final String SUBSCRIBE_DESTINATION_PREFIX = "/topic/terrarium/";
+    private static final String REQUIRED_AUTHORITY = "ROLE_ADMIN";
 
     private final JwtDecoder jwtDecoder;
+    private final Converter<Jwt, ? extends AbstractAuthenticationToken> authenticationConverter;
     private final boolean requireAuth;
 
-    public StompAuthChannelInterceptor(JwtDecoder jwtDecoder, boolean requireAuth) {
+    public StompAuthChannelInterceptor(JwtDecoder jwtDecoder,
+                                       Converter<Jwt, ? extends AbstractAuthenticationToken> authenticationConverter,
+                                       boolean requireAuth) {
         this.jwtDecoder = jwtDecoder;
+        this.authenticationConverter = authenticationConverter;
         this.requireAuth = requireAuth;
     }
 
@@ -62,7 +70,7 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
         switch (accessor.getCommand()) {
             case CONNECT, STOMP -> {
                 if (requireAuth) {
-                    accessor.setUser(new JwtAuthenticationToken(authenticate(message, accessor)));
+                    accessor.setUser(authorize(message, authenticate(message, accessor)));
                 }
             }
             case SUBSCRIBE -> {
@@ -93,6 +101,16 @@ public class StompAuthChannelInterceptor implements ChannelInterceptor {
             }
         }
         return message;
+    }
+
+    private AbstractAuthenticationToken authorize(Message<?> message, Jwt jwt) {
+        AbstractAuthenticationToken authentication = authenticationConverter.convert(jwt);
+        boolean admin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> REQUIRED_AUTHORITY.equals(authority.getAuthority()));
+        if (!admin) {
+            throw new MessageDeliveryException(message, "Forbidden");
+        }
+        return authentication;
     }
 
     private Jwt authenticate(Message<?> message, StompHeaderAccessor accessor) {

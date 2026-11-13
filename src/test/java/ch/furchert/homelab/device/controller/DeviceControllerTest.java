@@ -70,7 +70,7 @@ class DeviceControllerTest {
         when(deviceService.getAllDevices()).thenReturn(List.of(d1, d2));
 
         mockMvc.perform(get("/devices")
-                        .with(jwt()))
+                        .with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].name").value("terra1"))
@@ -94,7 +94,7 @@ class DeviceControllerTest {
         when(deviceService.getDevice(1L)).thenReturn(Optional.of(d));
 
         mockMvc.perform(get("/devices/1")
-                        .with(jwt()))
+                        .with(adminJwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(1))
                 .andExpect(jsonPath("$.name").value("terra1"))
@@ -106,7 +106,7 @@ class DeviceControllerTest {
         when(deviceService.getDevice(99L)).thenReturn(Optional.empty());
 
         mockMvc.perform(get("/devices/99")
-                        .with(jwt()))
+                        .with(adminJwt()))
                 .andExpect(status().isNotFound());
     }
 
@@ -169,7 +169,7 @@ class DeviceControllerTest {
         );
     }
 
-    /** Control is ADMIN-only (#81). */
+    /** Every /devices request is ADMIN-only (#81, #124). */
     private static JwtRequestPostProcessor adminJwt() {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }

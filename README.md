@@ -25,18 +25,20 @@ Real-time IoT device management service for the doemefu homelab ecosystem -- MQT
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/devices` | JWT | List all devices with current state |
-| GET | `/devices/{id}` | JWT | Single device state |
+| GET | `/devices` | JWT, role `ADMIN` | List all devices with current state |
+| GET | `/devices/{id}` | JWT, role `ADMIN` | Single device state |
 | POST | `/devices/{id}/control` | JWT, role `ADMIN` (403 otherwise) | Send control command (publishes to MQTT) |
 | POST | `/devices` | JWT, role `ADMIN` | Register a device and provision its OAuth2 client (see below) → `201` |
 | DELETE | `/devices/{name}` | JWT, role `ADMIN` | Delete a device and revoke its OAuth2 client → `204` |
-| GET/POST/PUT/DELETE | `/schedules`, `/schedules/{id}` | JWT; writes role `ADMIN` | Schedules CRUD (see below) |
+| GET/POST/PUT/DELETE | `/schedules`, `/schedules/{id}` | JWT, role `ADMIN` | Schedules CRUD (see below) |
 | GET | `/actuator/health` | None | K8s liveness/readiness |
 | GET | `/actuator/info` | None | Service info |
 | GET | `/api-docs` | OIDC login | OpenAPI JSON spec |
 | GET | `/swagger-ui.html` | OIDC login | Swagger UI |
 
-JWT means an auth-service access token: valid signature (JWKS), `iss` = `https://auth.furchert.ch`, not expired, no `typ: at+jwt`, and no ID token (tokens with an `azp` claim are rejected). Reads accept any such token; every other method under `/devices/**` needs the `role` claim `ADMIN`, which auth-service puts only into tokens of signed-in users (client_credentials tokens carry no role). Audience (`aud`) is not checked yet (doemefu/homelab-auth-service#101, #81).
+JWT means an auth-service access token: valid signature (JWKS), `iss` = `https://auth.furchert.ch`, `aud` contains `furchert-ch`, not expired, no `typ: at+jwt`, and no ID token (tokens with an `azp` claim are rejected); otherwise `401`. Every method under `/devices/**` and `/schedules/**`, reads included, also needs the `role` claim `ADMIN` (`403` otherwise), which auth-service puts only into tokens of signed-in users (client_credentials tokens carry no role). In practice the only accepted caller is a signed-in admin's furchert-ch access token, which furchert-ch forwards server-side (#124).
+
+Audience: auth-service sets `aud` to the requesting client's id, so `aud = furchert-ch` checks which client the token was issued to, not which resource it is meant for. That is an interim rule (#81) until auth-service issues resource audiences (doemefu/homelab-auth-service#101). Tokens issued to other clients get `401`, including Swagger UI's own login (client `device-service`, see below) and device `client_credentials` tokens.
 
 ### Device registration (`POST /devices`)
 
@@ -78,18 +80,18 @@ Scope today (provisioning only): the broker does not yet authenticate devices ag
 auth-service (doemefu/homelab#122), and device-service subscribes only to `terra1/#`,
 `terra2/#` and `terraGeneral/#`, so `mqttUsername` and `mqttTopicsAllowed` describe the
 target state. Devices that already exist as auto-created rows (from their first MQTT message)
-get `409`. A device's own `client_credentials` token carries no role: it can read
-`GET /devices/**` and subscribe via STOMP, but not write (no audience or scope gate on reads
-until doemefu/homelab-auth-service#101). Identifiers: `GET /devices/{id}` and control use the
-numeric row id; `DELETE` uses the canonical `name`.
+get `409`. A device's own `client_credentials` token (`aud` = the device id, no role) is not a
+REST or WebSocket credential: device-service rejects it on every endpoint and on STOMP `CONNECT`
+(#124). Device firmware must not depend on the REST or WebSocket API. Identifiers:
+`GET /devices/{id}` and control use the numeric row id; `DELETE` uses the canonical `name`.
 
-Unauthenticated browser requests to Swagger endpoints are automatically redirected to auth-service login and returned to Swagger after successful sign-in.
+Unauthenticated browser requests to Swagger endpoints are automatically redirected to auth-service login and returned to Swagger after successful sign-in. That login yields a token for client `device-service`, which the API rejects (audience, see above), so "Try it out" calls return `401`; Swagger UI is documentation only.
 
 ### Schedules (`/schedules`)
 
-Cron-driven MQTT commands (#41, ADR 0001: device-service owns the `schedules` table and executes it). Reads need
-any valid access token (as for `/devices`); writes need the `role` claim `ADMIN`, i.e. a signed-in admin's access
-token (a server-side proxy such as furchert-ch must forward the user's token, not a client_credentials token).
+Cron-driven MQTT commands (#41, ADR 0001: device-service owns the `schedules` table and executes it). Reads and
+writes need the `role` claim `ADMIN` (as for `/devices`), i.e. a signed-in admin's furchert-ch access token (a
+server-side proxy such as furchert-ch must forward the user's token, not a client_credentials token).
 
 | Method | Path | Auth | Result |
 |--------|------|------|--------|
@@ -133,9 +135,9 @@ a malformed body or a non-numeric id returns `400 {"error": "..."}`; unknown ids
 
 STOMP endpoint at `/ws` (read-only broadcast).
 
-- **Authentication:** the STOMP `CONNECT` frame must carry the native header `Authorization: Bearer <access token>` (the same JWTs the REST API accepts). The WebSocket upgrade itself needs no token, because browsers cannot send one. Kill switch: `app.websocket.require-auth=false` (`APP_WEBSOCKET_REQUIRE_AUTH`).
+- **Authentication:** the STOMP `CONNECT` frame must carry the native header `Authorization: Bearer <access token>`, validated like the REST API (same decoder, so the same issuer, audience and ID-token rules), and the token must carry the `role` claim `ADMIN` (#124). Otherwise the session is closed with a STOMP `ERROR` (`Unauthorized` or `Forbidden`). The WebSocket upgrade itself needs no token, because browsers cannot send one. Kill switch: `app.websocket.require-auth=false` (`APP_WEBSOCKET_REQUIRE_AUTH`) turns off the token check and the `ADMIN` check together.
 - **Origins:** browser handshakes are accepted only from `app.websocket.allowed-origins` (default `https://furchert.ch`; comma-separated patterns, `APP_WEBSOCKET_ALLOWED_ORIGINS`). Clients that send no `Origin` header (non-browser) are not affected.
-- **Token lifetime (residual risk):** the JWT is checked only at `CONNECT`. An open session is not closed when the token's `exp` passes, so a client keeps receiving the read-only broadcast until it disconnects. Accepted because the stream is read-only and clients cannot publish; per-frame or expiry-driven re-validation would be a follow-up.
+- **Token lifetime (residual risk):** the JWT and the `ADMIN` role are checked only at `CONNECT`. An open session is not closed when the token's `exp` passes or the user loses the `ADMIN` role, so a client keeps receiving the read-only broadcast until it disconnects. Accepted because the stream is read-only and clients cannot publish; per-frame or expiry-driven re-validation would be a follow-up.
 - **Client SUBSCRIBE:** only destinations under `/topic/terrarium/` are accepted, in both switch positions; any other `SUBSCRIBE` closes the session with a STOMP `ERROR`.
 - **Client SEND:** only application destinations (`/app/**`) are accepted; a `SEND` to `/topic/**` or any other destination closes the session with a STOMP `ERROR`. Server-to-client frames sent by a client (`MESSAGE`, `CONNECTED`, `RECEIPT`, `ERROR`) are rejected the same way.
 

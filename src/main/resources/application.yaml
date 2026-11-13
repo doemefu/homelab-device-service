@@ -24,6 +24,10 @@ spring:
           # claim is validated (#81); with jwk-set-uri present Boot makes no OIDC discovery call.
           jwk-set-uri: ${JWKS_URI:http://localhost:8080/oauth2/jwks}
           issuer-uri: ${JWT_ISSUER:https://auth.furchert.ch}
+          # Only access tokens issued to furchert-ch (aud = client id) are accepted (#81, #124).
+          # Interim: aud is the client identity, not a resource audience
+          # (doemefu/homelab-auth-service#101).
+          audiences: furchert-ch
       client:
         registration:
           device-service:
