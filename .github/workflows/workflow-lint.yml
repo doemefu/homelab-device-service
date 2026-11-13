@@ -1,0 +1,57 @@
+name: Workflow Lint
+
+# Pull-request-only checks for the workflow files (#126):
+# - pinned-actions: every `uses:` must be a local action (`./...`), `owner/repo[/path]@<40-hex SHA>`
+#   or `docker://...@sha256:<64-hex>`. An allowlist over the parsed YAML
+#   (.github/scripts/check_action_pins.py), so tags, branches and short SHAs all fail.
+# - actionlint: pinned release binary, checksum-verified before extraction (same pattern as the
+#   infrastructure repo's lint-workflows job; bump version and SHA-256 together by hand).
+
+on:
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-actions:
+    name: Pinned actions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Self-test the pin check
+        run: python3 .github/scripts/check_action_pins.py --self-test
+      - name: Require full-SHA or digest pins
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          python3 .github/scripts/check_action_pins.py .github/workflows/*.yml .github/workflows/*.yaml
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint (pinned + checksum-verified)
+        env:
+          ACTIONLINT_SHA256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+        run: |
+          set -euo pipefail
+          asset="actionlint_1.7.7_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v1.7.7/${asset}"
+          echo "${ACTIONLINT_SHA256}  ${asset}" | sha256sum -c -
+          sudo tar -xzf "${asset}" -C /usr/local/bin actionlint
+          rm -f "${asset}"
+      - name: Run actionlint
+        run: actionlint -color
